@@ -8,6 +8,99 @@ import "./App.css";
 import BackendBadge from "./components/BackendBadge";
 import PostsHistoryPanel from "./components/PostsHistoryPanel";
 
+/** Resolve a URL we can actually <img src> */
+function resolveMediaPreviewUrl(mediaUrl, backendBase) {
+  if (!mediaUrl) return "";
+  if (/^https?:\/\//i.test(mediaUrl)) return mediaUrl;
+  if (mediaUrl.startsWith("/")) {
+    if (backendBase) {
+      return backendBase.replace(/\/+$/, "") + mediaUrl;
+    }
+    return mediaUrl;
+  }
+  return "";
+}
+
+/** Simple modal gallery for /uploads */
+function MediaGalleryModal({
+  open,
+  onClose,
+  uploadsInfo,
+  backendBase,
+  onSelect,
+}) {
+  if (!open) return null;
+
+  const items = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
+
+  function handleSelect(raw) {
+    if (!raw) return;
+    const m = String(raw).match(/(\/uploads\/[^?#]+)/);
+    const value = m ? m[1] : String(raw);
+    onSelect(value);
+  }
+
+  return (
+    <div className="media-modal-backdrop" onClick={onClose}>
+      <div
+        className="media-modal"
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        <div className="media-modal-header">
+          <div>
+            <h2>Media gallery</h2>
+            <p className="muted small">
+              These are files from your <code>/uploads</code> folder (R2 /
+              PUBLIC_BASE_URL). Click one to use it as the default photo.
+            </p>
+          </div>
+          <button className="btn btn--ghost btn--small" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        {!items.length ? (
+          <div className="muted small">
+            No uploads yet. Use <strong>Upload from my computer</strong> first,
+            then refresh this gallery from Diagnostics → Media / uploads check.
+          </div>
+        ) : (
+          <div className="media-gallery-grid">
+            {items.map((raw) => {
+              const key = String(raw);
+              const href = /^https?:\/\//i.test(key)
+                ? key
+                : backendBase
+                ? backendBase.replace(/\/+$/, "") + key
+                : key;
+
+              const labelMatch = key.match(/\/([^\/?#]+)$/);
+              const label = labelMatch?.[1] || key;
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="media-gallery-item"
+                  onClick={() => handleSelect(key)}
+                  title={key}
+                >
+                  <div className="media-gallery-thumb">
+                    <img src={href} alt={label} loading="lazy" />
+                  </div>
+                  <div className="media-gallery-label">{label}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const CTA_OPTIONS = [
   { value: "CALL_NOW", label: "Call now (tel:+)" },
   { value: "LEARN_MORE", label: "Learn more" },
@@ -69,6 +162,7 @@ export default function App() {
   const [locationsByAccount, setLocationsByAccount] = useState({});
   const [uploadsInfo, setUploadsInfo] = useState(null);
   const [uploadsCheck, setUploadsCheck] = useState(null);
+  const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
 
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.profileId === selectedId),
@@ -585,14 +679,53 @@ export default function App() {
                         disabled={uploadingPhoto || !backendBase}
                       />
                     </label>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      onClick={async () => {
+                        if (!uploadsInfo) {
+                          await loadUploadsInfo();
+                        }
+                        setMediaGalleryOpen(true);
+                      }}
+                      disabled={!backendBase}
+                    >
+                      Browse gallery
+                    </button>
                     <span className="muted small">
                       {uploadingPhoto
                         ? "Uploading..."
                         : backendBase
-                        ? "Saved to /uploads and auto-filled."
+                        ? "Uploads live on your backend at /uploads."
                         : "Resolving backend..."}
                     </span>
                   </div>
+
+                  {resolveMediaPreviewUrl(mediaUrl, backendBase) ? (
+                    <div className="media-preview">
+                      <div className="media-preview-thumb">
+                        <img
+                          src={resolveMediaPreviewUrl(mediaUrl, backendBase)}
+                          alt="Default media"
+                        />
+                      </div>
+                      <div className="media-preview-meta">
+                        <div className="media-preview-title">Current default photo</div>
+                        <div className="media-preview-url small">
+                          {mediaUrl || "—"}
+                        </div>
+                        <div className="media-preview-hint muted small">
+                          This is the image that will be attached when you post from
+                          this profile (unless you override it per-post).
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="muted small" style={{ marginTop: 6 }}>
+                      No default photo set yet. Upload a file or pick one from the
+                      gallery.
+                    </p>
+                  )}
                 </div>
                 <div className="panel-section">
                   <button
@@ -1009,6 +1142,18 @@ export default function App() {
         </main>
 
         {toast ? <div className="toast">{toast}</div> : null}
+
+        <MediaGalleryModal
+          open={mediaGalleryOpen}
+          onClose={() => setMediaGalleryOpen(false)}
+          uploadsInfo={uploadsInfo}
+          backendBase={backendBase}
+          onSelect={(value) => {
+            setMediaUrl(value);
+            setMediaGalleryOpen(false);
+            notify("Photo selected from gallery.");
+          }}
+        />
       </div>
     </div>
   );
