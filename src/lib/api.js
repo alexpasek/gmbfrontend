@@ -67,10 +67,36 @@ const api = {
       `/generate-post-by-profile?profileId=${encodeURIComponent(profileId)}`
     );
   },
-  async postNow({ profileId, postText, cta, linkUrl, mediaUrl }) {
+  async postNow({
+    profileId,
+    postText,
+    cta,
+    linkUrl,
+    mediaUrl,
+    topicType,
+    eventTitle,
+    eventStart,
+    eventEnd,
+    offerTitle,
+    offerCoupon,
+    offerRedeemUrl,
+  }) {
     return doFetch("/post-now", {
       method: "POST",
-      body: JSON.stringify({ profileId, postText, cta, linkUrl, mediaUrl }),
+      body: JSON.stringify({
+        profileId,
+        postText,
+        cta,
+        linkUrl,
+        mediaUrl,
+        topicType,
+        eventTitle,
+        eventStart,
+        eventEnd,
+        offerTitle,
+        offerCoupon,
+        offerRedeemUrl,
+      }),
     });
   },
   async postNowAll() {
@@ -142,7 +168,7 @@ export async function uploadPhoto(file, baseOverride) {
   const base = (baseOverride || (await getApiBase())).replace(/\/+$/, "");
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(base + "/upload-photo", {
+  const res = await fetch(base + "/upload", {
     method: "POST",
     body: form,
   });

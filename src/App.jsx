@@ -17,6 +17,13 @@ const CTA_OPTIONS = [
   { value: "SIGN_UP", label: "Sign up" },
 ];
 
+const POST_TYPES = [
+  { value: "STANDARD", label: "Standard update" },
+  { value: "OFFER", label: "Offer / promotion" },
+  { value: "EVENT", label: "Event" },
+  { value: "ALERT", label: "Alert / important update" },
+];
+
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profiles", label: "Profiles & media" },
@@ -34,6 +41,14 @@ export default function App() {
 
   const [preview, setPreview] = useState("");
   const [postText, setPostText] = useState("");
+
+  const [postType, setPostType] = useState("STANDARD");
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventStart, setEventStart] = useState("");
+  const [eventEnd, setEventEnd] = useState("");
+  const [offerTitle, setOfferTitle] = useState("");
+  const [offerCoupon, setOfferCoupon] = useState("");
+  const [offerRedeemUrl, setOfferRedeemUrl] = useState("");
 
   const [cta, setCta] = useState("CALL_NOW");
   const [linkUrl, setLinkUrl] = useState("");
@@ -172,6 +187,13 @@ export default function App() {
         cta,
         linkUrl,
         mediaUrl,
+        topicType: postType,
+        eventTitle,
+        eventStart,
+        eventEnd,
+        offerTitle,
+        offerCoupon,
+        offerRedeemUrl
       });
       notify("Posted!");
       await refreshHistory();
@@ -652,6 +674,80 @@ export default function App() {
                     Post all profiles
                   </button>
                 </div>
+                <div className="panel-section">
+                  <div className="section">
+                    <label className="field-label">Post type</label>
+                    <select
+                      value={postType}
+                      onChange={(e) => setPostType(e.target.value)}
+                    >
+                      {POST_TYPES.map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {postType === "EVENT" && (
+                  <div className="panel-section">
+                    <div className="section-grid">
+                      <div className="section">
+                        <label className="field-label">Event title</label>
+                        <input
+                          value={eventTitle}
+                          onChange={(e) => setEventTitle(e.target.value)}
+                          placeholder="Spring Painting Promo Day"
+                        />
+                      </div>
+                      <div className="section">
+                        <label className="field-label">Event start (YYYY-MM-DD)</label>
+                        <input
+                          value={eventStart}
+                          onChange={(e) => setEventStart(e.target.value)}
+                          placeholder="2025-04-01"
+                        />
+                        <label className="field-label">Event end (YYYY-MM-DD)</label>
+                        <input
+                          value={eventEnd}
+                          onChange={(e) => setEventEnd(e.target.value)}
+                          placeholder="2025-04-07"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {postType === "OFFER" && (
+                  <div className="panel-section">
+                    <div className="section-grid">
+                      <div className="section">
+                        <label className="field-label">Offer title</label>
+                        <input
+                          value={offerTitle}
+                          onChange={(e) => setOfferTitle(e.target.value)}
+                          placeholder="10% off popcorn ceiling removal"
+                        />
+                      </div>
+                      <div className="section">
+                        <label className="field-label">Coupon code</label>
+                        <input
+                          value={offerCoupon}
+                          onChange={(e) => setOfferCoupon(e.target.value)}
+                          placeholder="SPRING10"
+                        />
+                      </div>
+                      <div className="section">
+                        <label className="field-label">Redeem URL (optional)</label>
+                        <input
+                          value={offerRedeemUrl}
+                          onChange={(e) => setOfferRedeemUrl(e.target.value)}
+                          placeholder="https://epfproservices.com/popcorn-ceiling-removal/mississauga/"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="panel-section">
                   <label className="field-label">Post copy</label>
                   <textarea
