@@ -11,8 +11,14 @@ export async function getApiBase() {
 
   if (typeof window !== "undefined") {
     const origin = window.location.origin;
-    if (origin.includes("localhost:5173") || origin.includes("127.0.0.1:5173")) {
+    if (
+      origin.includes("localhost:5173") ||
+      origin.includes("127.0.0.1:5173")
+    ) {
       cachedBase = "http://127.0.0.1:8787";
+    } else if (/\.pages\.dev$/i.test(origin)) {
+      // Deployed frontend should default to the production backend
+      cachedBase = "https://gmb-automation-backend.webtoronto22.workers.dev";
     } else {
       cachedBase = origin;
     }
@@ -154,6 +160,41 @@ const api = {
   },
   async checkUploads() {
     return doFetch("/uploads-check");
+  },
+  async deleteUpload(pathOrUrl) {
+    let key = String(pathOrUrl || "")
+      .replace(/^https?:\/\/[^/]+\/media\//i, "")
+      .replace(/^https?:\/\/[^/]+\/uploads\//i, "")
+      .replace(/^\/?media\//i, "")
+      .replace(/^\/?uploads\//i, "")
+      .replace(/^\/+/, "");
+    try {
+      key = decodeURIComponent(key);
+    } catch (_e) {
+      // keep raw
+    }
+    if (!key) throw new Error("Missing key");
+    return doFetch(`/uploads/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+  },
+  async appendProfilePhotos(profileId, items) {
+    return doFetch(`/profiles/${encodeURIComponent(profileId)}/photos`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  },
+  async generateCaptions(profileId, serviceType, count = 3) {
+    return doFetch("/ai/captions", {
+      method: "POST",
+      body: JSON.stringify({ profileId, serviceType, count }),
+    });
+  },
+  async generateImage(prompt) {
+    return doFetch("/ai/image", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    });
   },
 };
 

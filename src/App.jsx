@@ -120,7 +120,7 @@ const POST_TYPES = [
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profiles", label: "Profiles & media" },
-  { id: "composer", label: "Composer" },
+  { id: "bulk", label: "Bulk posting" },
   { id: "scheduler", label: "Scheduler" },
   { id: "history", label: "Post history" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -535,9 +535,9 @@ export default function App() {
               {tab === "dashboard" &&
                 "High-level overview of your GBP automation."}
               {tab === "profiles" &&
-                "Profiles, CTAs, landing URLs, and media defaults."}
-              {tab === "composer" &&
-                "Generate AI posts and publish them to Google."}
+                "Profiles, CTAs, media defaults, and quick composer."}
+              {tab === "bulk" &&
+                "Toggle bulk inclusion and manage posting access."}
               {tab === "scheduler" &&
                 "Configure daily times and monitor the scheduler."}
               {tab === "history" &&
@@ -630,6 +630,52 @@ export default function App() {
                     Run scheduler once
                   </button>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "bulk" && (
+            <section className="panel">
+              <div className="panel-title">Bulk posting access</div>
+              <p className="muted small">
+                Toggle inclusion for “Post all” and scheduler runs.
+              </p>
+              <div className="bulk-grid">
+                {profiles.length === 0 ? (
+                  <div className="muted small">No profiles loaded.</div>
+                ) : (
+                  profiles.map((p) => (
+                    <div
+                      key={p.profileId}
+                      className={
+                        "bulk-card" +
+                        (p.disabled
+                          ? " bulk-card--disabled"
+                          : " bulk-card--active")
+                      }
+                    >
+                      <div className="bulk-card__body">
+                        <div className="bulk-card__title">
+                          {p.businessName || p.profileId}
+                        </div>
+                        <div className="muted small">
+                          {p.city || "No city"} · {p.profileId}
+                        </div>
+                      </div>
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={!p.disabled}
+                          disabled={toggleBusyId === p.profileId || busy}
+                          onChange={(e) =>
+                            toggleProfilePosting(p, e.target.checked)
+                          }
+                        />
+                        <span className="slider" />
+                      </label>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
           )}
@@ -738,53 +784,10 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="panel">
-                <div className="panel-title">Bulk posting access</div>
-                <p className="muted small">
-                  Toggle inclusion for “Post all” and scheduler runs.
-                </p>
-                <div className="bulk-grid">
-                  {profiles.length === 0 ? (
-                    <div className="muted small">No profiles loaded.</div>
-                  ) : (
-                    profiles.map((p) => (
-                      <div
-                        key={p.profileId}
-                        className={
-                          "bulk-card" +
-                          (p.disabled
-                            ? " bulk-card--disabled"
-                            : " bulk-card--active")
-                        }
-                      >
-                        <div className="bulk-card__body">
-                          <div className="bulk-card__title">
-                            {p.businessName || p.profileId}
-                          </div>
-                          <div className="muted small">
-                            {p.city || "No city"} · {p.profileId}
-                          </div>
-                        </div>
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={!p.disabled}
-                            disabled={toggleBusyId === p.profileId || busy}
-                            onChange={(e) =>
-                              toggleProfilePosting(p, e.target.checked)
-                            }
-                          />
-                          <span className="slider" />
-                        </label>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
             </section>
           )}
 
-          {tab === "composer" && (
+          {tab === "profiles" && (
             <section className="panel-grid panel-grid--two">
               <div className="panel">
                 <div className="panel-title">Generate & post</div>
