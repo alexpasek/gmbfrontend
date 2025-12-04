@@ -196,6 +196,38 @@ const api = {
       body: JSON.stringify({ prompt }),
     });
   },
+  async getScheduledPosts() {
+    return doFetch("/scheduled-posts");
+  },
+  async createScheduledPost(payload) {
+    return doFetch("/scheduled-posts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async updateScheduledPost(id, payload) {
+    return doFetch(`/scheduled-posts/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+  async deleteScheduledPost(id) {
+    return doFetch(`/scheduled-posts/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+  async draftScheduledPosts(payload) {
+    return doFetch("/scheduled-posts/draft", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async commitScheduledPosts(items) {
+    return doFetch("/scheduled-posts/commit", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  },
 };
 
 export async function updateProfileBulkAccess(profileId, enabled) {

@@ -28,16 +28,70 @@ function MediaGalleryModal({
   uploadsInfo,
   backendBase,
   onSelect,
+  onSelectMultiple,
+  onPreview,
+  onDeleteUpload,
 }) {
   if (!open) return null;
 
-  const items = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
+  const [items, setItems] = React.useState(
+    (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || []
+  );
+  const [selected, setSelected] = React.useState([]);
+  const [previewKey, setPreviewKey] = React.useState("");
+  const [deletingKey, setDeletingKey] = React.useState("");
 
-  function handleSelect(raw) {
+  React.useEffect(() => {
+    const list = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
+    setItems(list);
+    setSelected([]);
+    setPreviewKey("");
+  }, [uploadsInfo]);
+
+  function toggle(key) {
+    setSelected((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }
+
+  function normalizeValue(raw) {
     if (!raw) return;
     const m = String(raw).match(/(\/uploads\/[^?#]+)/);
     const value = m ? m[1] : String(raw);
-    onSelect(value);
+    return value;
+  }
+
+  function handleSelect(raw) {
+    const value = normalizeValue(raw);
+    if (value) onSelect(value);
+  }
+
+  function handleUseSelected() {
+    if (onSelectMultiple && selected.length) {
+      const normalized = selected
+        .map(normalizeValue)
+        .filter(Boolean);
+      onSelectMultiple(normalized);
+      setSelected([]);
+      if (onClose) onClose();
+    }
+  }
+
+  async function handleDelete(raw) {
+    if (!raw) return;
+    try {
+      setDeletingKey(raw);
+      await api.deleteUpload(raw);
+      setItems((prev) => prev.filter((it) => it !== raw));
+      setSelected((prev) => prev.filter((it) => it !== raw));
+      if (previewKey === raw) setPreviewKey("");
+      if (onDeleteUpload) onDeleteUpload(raw);
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Delete failed");
+    } finally {
+      setDeletingKey("");
+    }
   }
 
   return (
@@ -60,7 +114,23 @@ function MediaGalleryModal({
             Close
           </button>
         </div>
-
+        <div className="action-row" style={{ justifyContent: "space-between" }}>
+          <div className="muted small">
+            Selected {selected.length} item{selected.length === 1 ? "" : "s"}
+          </div>
+          <div className="action-row">
+            <button
+              className="btn btn--ghost btn--small"
+              onClick={handleUseSelected}
+              disabled={!selected.length}
+            >
+              Use selected
+            </button>
+            <button className="btn btn--ghost btn--small" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
         {!items.length ? (
           <div className="muted small">
             No uploads yet. Use <strong>Upload from my computer</strong> first,
@@ -80,20 +150,63 @@ function MediaGalleryModal({
               const label = labelMatch?.[1] || key;
 
               return (
-                <button
+                <div
                   key={key}
-                  type="button"
-                  className="media-gallery-item"
-                  onClick={() => handleSelect(key)}
+                  className={
+                    "media-gallery-item" +
+                    (selected.includes(key) ? " media-gallery-item--selected" : "")
+                  }
                   title={key}
                 >
-                  <div className="media-gallery-thumb">
+                  <button
+                    type="button"
+                    className="media-gallery-thumb"
+                    onClick={() => {
+                      setPreviewKey(key);
+                      if (onPreview) {
+                        onPreview(resolveMediaPreviewUrl(key, backendBase));
+                      }
+                    }}
+                  >
                     <img src={href} alt={label} loading="lazy" />
+                  </button>
+                  <button
+                    type="button"
+                    className="media-gallery-select"
+                    onClick={() => toggle(key)}
+                  >
+                    <div className="media-gallery-label">{label}</div>
+                    <div className="muted small">
+                      {selected.includes(key) ? "Selected" : "Click to select"}
+                    </div>
+                  </button>
+                  <div className="action-row">
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      onClick={() => handleDelete(key)}
+                      disabled={deletingKey === key}
+                    >
+                      {deletingKey === key ? "Deleting..." : "Delete"}
+                    </button>
                   </div>
-                  <div className="media-gallery-label">{label}</div>
-                </button>
+                </div>
               );
             })}
+          </div>
+        )}
+        {previewKey && (
+          <div className="media-preview">
+            <div className="media-preview-thumb" style={{ width: 120, height: 120 }}>
+              <img
+                src={resolveMediaPreviewUrl(previewKey, backendBase)}
+                alt="Preview"
+              />
+            </div>
+            <div className="media-preview-meta">
+              <div className="media-preview-title">Preview</div>
+              <div className="media-preview-url small">{previewKey}</div>
+            </div>
           </div>
         )}
       </div>
@@ -204,6 +317,7 @@ export default function App() {
   const [previewDetails, setPreviewDetails] = useState(null);
   const [posting, setPosting] = useState(false);
   const [postNowStatus, setPostNowStatus] = useState("");
+  const [previewing, setPreviewing] = useState(false);
 
   const [accounts, setAccounts] = useState(null);
   const [locationsByAccount, setLocationsByAccount] = useState({});
@@ -213,11 +327,44 @@ export default function App() {
   const linkSaveTimer = useRef(null);
   const linkInitRef = useRef(false);
   const [linkOptionsSaving, setLinkOptionsSaving] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduledPosts, setScheduledPosts] = useState([]);
+  const [scheduleStatus, setScheduleStatus] = useState("");
+  const [editingScheduledId, setEditingScheduledId] = useState("");
+  const generateRef = useRef(null);
+  const [bulkImages, setBulkImages] = useState([]);
+  const [bulkDrafts, setBulkDrafts] = useState([]);
+  const [activeDraftIndex, setActiveDraftIndex] = useState(-1);
+  const [regeneratingDraftIndex, setRegeneratingDraftIndex] = useState(-1);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCadenceDays, setBulkCadenceDays] = useState(1);
+  const [bulkAutoGenerate, setBulkAutoGenerate] = useState(false);
+  const [bulkDurationPreset, setBulkDurationPreset] = useState("7");
+  const [bulkDurationCustom, setBulkDurationCustom] = useState("");
+  const [autoCadenceDays, setAutoCadenceDays] = useState(1);
+  const [lightboxSrc, setLightboxSrc] = useState("");
+  const [deletingScheduledId, setDeletingScheduledId] = useState("");
 
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.profileId === selectedId),
     [profiles, selectedId]
   );
+
+  const activeBulkDraft = useMemo(
+    () => (activeDraftIndex >= 0 ? bulkDrafts[activeDraftIndex] : null),
+    [activeDraftIndex, bulkDrafts]
+  );
+
+  const activeDraftBody = activeBulkDraft?.body || {};
+  const activeDraftCta = activeDraftBody.cta || "CALL_NOW";
+  const activeDraftLink =
+    activeDraftCta === "CALL_NOW"
+      ? activeDraftBody.linkUrl ||
+        (activeDraftBody.phone ? `tel:${activeDraftBody.phone}` : "")
+      : activeDraftBody.linkUrl || "";
+  const activeDraftMedia = activeDraftBody.mediaUrl || "";
+  const activeDraftHref = resolveCtaLink(activeDraftCta, activeDraftLink);
 
   const phoneCandidate = useMemo(() => {
     const raw =
@@ -333,6 +480,23 @@ export default function App() {
   }, [selectedId]);
 
   useEffect(() => {
+    loadScheduledPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!bulkDrafts.length) {
+      if (activeDraftIndex !== -1) setActiveDraftIndex(-1);
+      return;
+    }
+    if (activeDraftIndex < 0) {
+      setActiveDraftIndex(0);
+    } else if (activeDraftIndex >= bulkDrafts.length) {
+      setActiveDraftIndex(bulkDrafts.length - 1);
+    }
+  }, [activeDraftIndex, bulkDrafts]);
+
+  useEffect(() => {
     if (!selectedProfile || !selectedProfile.profileId) return;
     const normalizedLinks = linkOptions
       .map((u) => String(u || "").trim())
@@ -363,6 +527,7 @@ export default function App() {
   async function doPreview() {
     if (!selectedId) return notify("Select a profile first");
     setPreview("");
+    setPreviewing(true);
     setPreviewDetails(null);
     try {
       const r = await api.generatePost(selectedId);
@@ -381,6 +546,8 @@ export default function App() {
       }
     } catch (e) {
       notify(e.message || "Preview failed");
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -456,6 +623,287 @@ export default function App() {
     }
   }
 
+  async function loadScheduledPosts() {
+    try {
+      const res = await api.getScheduledPosts();
+      const items = Array.isArray(res?.items) ? res.items : [];
+      const filtered = selectedId
+        ? items.filter((it) => it.profileId === selectedId)
+        : items;
+      filtered.sort(
+        (a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime()
+      );
+      setScheduledPosts(filtered);
+    } catch (e) {
+      notify(e.message || "Failed to load scheduled posts");
+    }
+  }
+
+  async function schedulePost() {
+    if (!selectedId) return notify("Select a profile first");
+    const dtString = `${scheduleDate}T${scheduleTime || "00:00"}:00`;
+    const when = new Date(dtString);
+    if (!scheduleDate || isNaN(when.getTime())) {
+      return notify("Pick a valid date/time.");
+    }
+    const effectiveLink =
+      cta === "CALL_NOW"
+        ? ""
+        : isValidHttpLink(linkUrl)
+        ? linkUrl
+        : getFallbackLink(selectedProfile);
+    const body = {
+      profileId: selectedId,
+      postText,
+      cta,
+      linkUrl: effectiveLink,
+      phone: phoneCandidate.replace(/^tel:/i, ""),
+      mediaUrl,
+      topicType: postType,
+      eventTitle,
+      eventStart,
+      eventEnd,
+      offerTitle,
+      offerCoupon,
+      offerRedeemUrl,
+    };
+    try {
+      setBusy(true);
+      if (editingScheduledId) {
+        await api.updateScheduledPost(editingScheduledId, {
+          runAt: when.toISOString(),
+          body,
+        });
+        setScheduleStatus("updated");
+      } else {
+        await api.createScheduledPost({
+          profileId: selectedId,
+          runAt: when.toISOString(),
+          body,
+        });
+        setScheduleStatus("scheduled");
+      }
+      notify(editingScheduledId ? "Updated scheduled post" : "Scheduled post");
+      setEditingScheduledId("");
+      await loadScheduledPosts();
+    } catch (e) {
+      notify(e.message || "Schedule failed");
+      setScheduleStatus("error");
+    } finally {
+      setBusy(false);
+      setTimeout(() => setScheduleStatus(""), 2000);
+    }
+  }
+
+  function updateBulkDraft(idx, updater) {
+    setBulkDrafts((prev) =>
+      prev.map((item, i) => {
+        if (i !== idx) return item;
+        const next = typeof updater === "function" ? updater(item) : updater;
+        return { ...item, ...next };
+      })
+    );
+  }
+
+  function updateBulkDraftBody(idx, patch) {
+    setBulkDrafts((prev) =>
+      prev.map((item, i) => {
+        if (i !== idx) return item;
+        const currentBody = item.body || {};
+        const nextBody =
+          typeof patch === "function"
+            ? patch(currentBody)
+            : { ...currentBody, ...patch };
+        return { ...item, body: nextBody };
+      })
+    );
+  }
+
+  async function autoScheduleWithAi() {
+    if (!selectedId) return notify("Select a profile first");
+    const images =
+      bulkImages.length > 0
+        ? bulkImages
+        : mediaUrl
+        ? [mediaUrl]
+        : [];
+    if (!images.length) return notify("Select at least one image (gallery or photo URL).");
+    const durationDays =
+      bulkDurationPreset === "all"
+        ? Number.MAX_SAFE_INTEGER
+        : bulkDurationPreset === "custom"
+        ? Number(bulkDurationCustom || 0)
+        : Number(bulkDurationPreset);
+    const slotsLimit =
+      bulkDurationPreset === "all"
+        ? images.length
+        : Math.min(
+            images.length,
+            Math.max(1, Math.ceil(durationDays / autoCadenceDays || 1))
+          );
+    const useImages = images.slice(0, slotsLimit);
+    const start = `${scheduleDate || new Date().toISOString().slice(0, 10)}T${
+      scheduleTime || "10:00"
+    }:00`;
+    try {
+      setBulkBusy(true);
+      const payload = {
+        profileId: selectedId,
+        images: useImages,
+        startAt: start,
+        cadenceDays: autoCadenceDays,
+        autoGenerateSummary: true,
+        body: {
+          cta,
+          linkUrl,
+          phone: phoneCandidate.replace(/^tel:/i, ""),
+          topicType: postType,
+          eventTitle,
+          eventStart,
+          eventEnd,
+          offerTitle,
+          offerCoupon,
+          offerRedeemUrl,
+        },
+      };
+      const draftsRes = await api.draftScheduledPosts(payload);
+      const draftItems = Array.isArray(draftsRes?.items) ? draftsRes.items : [];
+      if (!draftItems.length) {
+        notify("No drafts returned. Check inputs.");
+        return;
+      }
+      await api.commitScheduledPosts(draftItems);
+      notify(`Scheduled ${draftItems.length} post(s) with AI text.`);
+      setBulkDrafts([]);
+      await loadScheduledPosts();
+    } catch (e) {
+      notify(e.message || "Auto-schedule failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function buildBulkDrafts() {
+    if (!selectedId) return notify("Select a profile first");
+    if (!bulkImages.length) return notify("Select images from the gallery first.");
+    const durationDays =
+      bulkDurationPreset === "all"
+        ? Number.MAX_SAFE_INTEGER
+        : bulkDurationPreset === "custom"
+        ? Number(bulkDurationCustom || 0)
+        : Number(bulkDurationPreset);
+    const slotsLimit =
+      bulkDurationPreset === "all"
+        ? bulkImages.length
+        : Math.min(
+            bulkImages.length,
+            Math.max(1, Math.ceil(durationDays / bulkCadenceDays || 1))
+          );
+    const images = bulkImages.slice(0, slotsLimit);
+    const start = `${scheduleDate || new Date().toISOString().slice(0, 10)}T${
+      scheduleTime || "10:00"
+    }:00`;
+    try {
+      setBulkBusy(true);
+      const body = {
+        profileId: selectedId,
+        images,
+        startAt: start,
+        cadenceDays: bulkCadenceDays,
+        autoGenerateSummary: bulkAutoGenerate,
+        body: {
+          postText,
+          cta,
+          linkUrl,
+          phone: phoneCandidate.replace(/^tel:/i, ""),
+          mediaUrl,
+          topicType: postType,
+          eventTitle,
+          eventStart,
+          eventEnd,
+          offerTitle,
+          offerCoupon,
+          offerRedeemUrl,
+        },
+      };
+      const res = await api.draftScheduledPosts(body);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      setBulkDrafts(items);
+      setActiveDraftIndex(items.length ? 0 : -1);
+      notify("Drafts generated. Review below.");
+    } catch (e) {
+      notify(e.message || "Failed to build drafts");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function regenerateBulkDraft(idx) {
+    const draft = bulkDrafts[idx];
+    if (!draft) return;
+    const media = draft.body?.mediaUrl;
+    if (!media) return notify("Add a media URL to this draft before regenerating.");
+    const profileIdForDraft = draft.profileId || selectedId;
+    if (!profileIdForDraft) return notify("Select a profile first");
+    try {
+      setRegeneratingDraftIndex(idx);
+      const payload = {
+        profileId: profileIdForDraft,
+        images: [media],
+        startAt: draft.runAt,
+        cadenceDays: 1,
+        autoGenerateSummary: true,
+        body: {
+          ...draft.body,
+          mediaUrl: media,
+          postText: "",
+        },
+      };
+      const res = await api.draftScheduledPosts(payload);
+      const newDraft = Array.isArray(res?.items) ? res.items[0] : null;
+      if (newDraft && newDraft.body) {
+        setBulkDrafts((prev) =>
+          prev.map((item, i) =>
+            i === idx
+              ? {
+                  ...item,
+                  runAt: draft.runAt || newDraft.runAt,
+                  body: {
+                    ...item.body,
+                    ...newDraft.body,
+                    postText: newDraft.body.postText || "",
+                  },
+                }
+              : item
+          )
+        );
+        notify("Draft regenerated with AI text.");
+      } else {
+        notify("No draft returned for regeneration.");
+      }
+    } catch (e) {
+      notify(e.message || "Regenerate failed");
+    } finally {
+      setRegeneratingDraftIndex(-1);
+    }
+  }
+
+  async function commitBulkDrafts() {
+    if (!bulkDrafts.length) return notify("No drafts to schedule.");
+    try {
+      setBulkBusy(true);
+      await api.commitScheduledPosts(bulkDrafts);
+      notify(`Scheduled ${bulkDrafts.length} posts`);
+      setBulkDrafts([]);
+      setBulkImages([]);
+      await loadScheduledPosts();
+    } catch (e) {
+      notify(e.message || "Failed to schedule drafts");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   function clearPostComposer() {
     setPostText("");
     setPreview("");
@@ -502,6 +950,20 @@ export default function App() {
   function refreshHistory() {
     setHistoryRefreshToken((token) => token + 1);
     return Promise.resolve();
+  }
+
+  async function deleteScheduled(id) {
+    if (!id) return;
+    setDeletingScheduledId(id);
+    try {
+      await api.deleteScheduledPost(id);
+      notify("Deleted scheduled post");
+      await loadScheduledPosts();
+    } catch (e) {
+      notify(e.message || "Delete failed");
+    } finally {
+      setDeletingScheduledId("");
+    }
   }
 
   async function saveConfig(e) {
@@ -597,6 +1059,35 @@ export default function App() {
       if (result && result.url) {
         setMediaUrl(result.url);
         notify("Photo uploaded from your computer.");
+      } else {
+        notify("Upload succeeded but no URL was returned.");
+      }
+    } catch (err) {
+      notify(err.message || "Upload failed");
+    } finally {
+      setUploadingPhoto(false);
+      if (e?.target) e.target.value = "";
+    }
+  }
+
+  async function handleBulkPhotoUpload(e) {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    if (!backendBase) {
+      notify("Backend not ready yet. Try again in a moment.");
+      if (e?.target) e.target.value = "";
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const result = await uploadPhoto(file, backendBase);
+      if (result && result.url) {
+        setBulkImages((prev) => [...prev, result.url].slice(-50));
+        if (!mediaUrl) setMediaUrl(result.url);
+        if (activeDraftIndex >= 0) {
+          updateBulkDraftBody(activeDraftIndex, { mediaUrl: result.url });
+        }
+        notify("Photo uploaded and added to bulk selection.");
       } else {
         notify("Upload succeeded but no URL was returned.");
       }
@@ -805,9 +1296,9 @@ export default function App() {
                   >
                     Run scheduler once
                   </button>
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
           )}
 
           {tab === "bulk" && (
@@ -895,6 +1386,28 @@ export default function App() {
                     placeholder="https://your-site/page"
                     disabled={cta === "CALL_NOW"}
                   />
+                  {linkOptions.length > 0 && (
+                    <div className="action-row">
+                      <select
+                        defaultValue=""
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v) setLinkUrl(v);
+                        }}
+                        disabled={cta === "CALL_NOW"}
+                      >
+                        <option value="">Pick saved link</option>
+                        {linkOptions.map((u, idx) => (
+                          <option key={idx} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="muted small">
+                        Saved links work best with “Learn more”.
+                      </span>
+                    </div>
+                  )}
                   <p className="muted small">
                     {cta === "CALL_NOW"
                       ? "Link disabled for Call now; phone above will be used."
@@ -1032,11 +1545,19 @@ export default function App() {
                 </div>
               </section>
 
-              <section className="panel">
+              <section className="panel" ref={generateRef}>
                 <div className="panel-title">Generate & post</div>
                 <div className="panel-section action-row">
-                  <button className="btn btn--blue" onClick={doPreview}>
-                    Generate preview
+                  <button className="btn btn--blue" onClick={doPreview} disabled={previewing}>
+                    {previewing ? (
+                      <span className="loading-dots">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    ) : (
+                      "Generate preview"
+                    )}
                   </button>
                   <button
                     className="btn btn--green"
@@ -1070,6 +1591,59 @@ export default function App() {
                   >
                     Clear all
                   </button>
+                </div>
+                <div className="panel-section">
+                  <label className="field-label">Schedule date/time</label>
+                  <div className="section-grid">
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                    />
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                    />
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={schedulePost}
+                      disabled={busy || posting || previewing}
+                    >
+                      {scheduleStatus === "scheduled"
+                        ? "Scheduled"
+                        : scheduleStatus === "updated"
+                        ? "Updated"
+                        : scheduleStatus === "error"
+                        ? "Retry"
+                        : "Schedule"}
+                    </button>
+                  </div>
+                  <p className="muted small">
+                    Pick a future date/time to queue this post for the selected profile. Click a scheduled row to load it for editing.
+                  </p>
+                  <div className="section-grid" style={{ alignItems: "end" }}>
+                    <div>
+                      <label className="field-label">Auto cadence</label>
+                      <select
+                        value={autoCadenceDays}
+                        onChange={(e) => setAutoCadenceDays(Number(e.target.value))}
+                      >
+                        <option value={1}>1 per day</option>
+                        <option value={2}>1 per 2 days</option>
+                        <option value={3}>1 per 3 days</option>
+                      </select>
+                    </div>
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={autoScheduleWithAi}
+                      disabled={bulkBusy || busy}
+                    >
+                      Auto schedule with AI
+                    </button>
+                  </div>
                 </div>
                 <div className="panel-section">
                   <div className="section">
@@ -1256,6 +1830,12 @@ export default function App() {
                           <img
                             src={resolveMediaPreviewUrl(mediaUrl, backendBase)}
                             alt="Post media preview"
+                            onClick={() =>
+                              setLightboxSrc(
+                                resolveMediaPreviewUrl(mediaUrl, backendBase)
+                              )
+                            }
+                            style={{ cursor: "pointer" }}
                           />
                         </div>
                       ) : null}
@@ -1416,12 +1996,515 @@ export default function App() {
           )}
 
           {tab === "history" && (
-            <section className="panel">
-              <div className="panel-title">Post history</div>
-              <PostsHistoryPanel
-                selectedProfileId={selectedId}
-                refreshToken={historyRefreshToken}
-              />
+            <section className="panel-grid panel-grid--two">
+              <div className="panel">
+                <div className="panel-title">Post history</div>
+                <PostsHistoryPanel
+                  selectedProfileId={selectedId}
+                  refreshToken={historyRefreshToken}
+                />
+              </div>
+              <div className="panel">
+                <div className="panel-title">Scheduled posts</div>
+                <div className="panel-section diag-shell">
+                  {scheduledPosts.length === 0 ? (
+                    <div className="muted small">
+                      No future scheduled posts for this profile.
+                    </div>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Profile</th>
+                          <th>CTA</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scheduledPosts.map((it) => (
+                          <tr
+                            key={it.id}
+                          >
+                            <td>{new Date(it.runAt).toLocaleString()}</td>
+                            <td>{selectedProfile?.businessName || it.profileId}</td>
+                            <td>{it.body?.cta || "—"}</td>
+                            <td>{editingScheduledId === it.id ? "Editing" : "Queued"}</td>
+                            <td>
+                              <div className="action-row">
+                                <button
+                                  className="btn btn--ghost btn--small"
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingScheduledId(it.id);
+                                    setScheduleDate(it.runAt.slice(0, 10));
+                                    setScheduleTime(it.runAt.slice(11, 16));
+                                    if (it.body) {
+                                      setPostText(it.body.postText || "");
+                                      setCta(it.body.cta || "CALL_NOW");
+                                      setLinkUrl(it.body.linkUrl || "");
+                                      setMediaUrl(it.body.mediaUrl || "");
+                                    }
+                                    if (generateRef.current) {
+                                      generateRef.current.scrollIntoView({ behavior: "smooth" });
+                                    }
+                                    notify("Loaded scheduled post into composer. Save by updating date/time and clicking Schedule or Post now.");
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="btn btn--ghost btn--small"
+                                  type="button"
+                                  onClick={() => deleteScheduled(it.id)}
+                                  disabled={deletingScheduledId === it.id}
+                                >
+                                  {deletingScheduledId === it.id ? "Deleting..." : "Delete"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+              <div className="panel panel--full">
+                <div className="panel-title">Bulk drafts & scheduling</div>
+                <div className="panel-section">
+                  <label className="field-label">Selected images</label>
+                  <div className="muted small">
+                    {bulkImages.length
+                      ? `${bulkImages.length} image(s) selected`
+                      : "Use Browse gallery to multi-select up to 50 images."}
+                  </div>
+                  <div className="action-row">
+                    <label className="btn btn--ghost upload-btn">
+                      Upload from my computer
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBulkPhotoUpload}
+                        disabled={uploadingPhoto || !backendBase}
+                      />
+                    </label>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={async () => {
+                        if (!uploadsInfo) {
+                          await loadUploadsInfo();
+                        }
+                        setMediaGalleryOpen(true);
+                      }}
+                      disabled={!backendBase}
+                    >
+                      Browse gallery
+                    </button>
+                    <span className="muted small">
+                      {uploadingPhoto
+                        ? "Uploading..."
+                        : backendBase
+                        ? "Pick or upload and they’ll appear here."
+                        : "Resolving backend..."}
+                    </span>
+                  </div>
+                  {bulkImages.length > 0 && (
+                    <div className="bulk-selected-strip">
+                      {bulkImages.slice(0, 12).map((src, idx) => (
+                        <div key={idx} className="bulk-thumb">
+                          <img
+                            src={resolveMediaPreviewUrl(src, backendBase)}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                            onClick={() =>
+                              setLightboxSrc(resolveMediaPreviewUrl(src, backendBase))
+                            }
+                            style={{ cursor: "pointer" }}
+                          />
+                        </div>
+                      ))}
+                      {bulkImages.length > 12 && (
+                        <div className="bulk-thumb bulk-thumb--more">
+                          +{bulkImages.length - 12}
+                        </div>
+                      )}
+                      <button
+                        className="btn btn--ghost btn--small"
+                        type="button"
+                        onClick={() => setBulkImages([])}
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="panel-section">
+                  <label className="field-label">Cadence (days)</label>
+                  <select
+                    value={bulkCadenceDays}
+                    onChange={(e) => setBulkCadenceDays(Number(e.target.value))}
+                  >
+                    <option value={1}>1 per day</option>
+                    <option value={2}>1 per 2 days</option>
+                    <option value={3}>1 per 3 days</option>
+                  </select>
+                  <label className="field-label">Duration</label>
+                  <div className="action-row">
+                    <select
+                      value={bulkDurationPreset}
+                      onChange={(e) => setBulkDurationPreset(e.target.value)}
+                    >
+                      <option value="7">7 days</option>
+                      <option value="30">30 days</option>
+                      <option value="all">Until images run out</option>
+                      <option value="custom">Custom days</option>
+                    </select>
+                    {bulkDurationPreset === "custom" && (
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Days"
+                        value={bulkDurationCustom}
+                        onChange={(e) => setBulkDurationCustom(e.target.value)}
+                        style={{ width: 100 }}
+                      />
+                    )}
+                  </div>
+                  <label className="field-label">Auto-generate text per image</label>
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={bulkAutoGenerate}
+                      onChange={(e) => setBulkAutoGenerate(e.target.checked)}
+                    />
+                    Enable AI text for each draft
+                  </label>
+                  <div className="action-row">
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={buildBulkDrafts}
+                      disabled={bulkBusy || !bulkImages.length}
+                    >
+                      {bulkBusy ? "Working..." : "Build drafts"}
+                    </button>
+                    <button
+                      className="btn btn--green"
+                      type="button"
+                      onClick={commitBulkDrafts}
+                      disabled={bulkBusy || !bulkDrafts.length}
+                    >
+                      Schedule all drafts
+                    </button>
+                  </div>
+                </div>
+                <div className="panel-section table-shell">
+                  {bulkDrafts.length === 0 ? (
+                    <div className="muted small">No drafts yet.</div>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>CTA</th>
+                          <th>Link</th>
+                          <th>Media</th>
+                          <th>Copy</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkDrafts.map((d, idx) => (
+                          <tr key={d.id || idx}>
+                            <td>
+                              <input
+                                type="datetime-local"
+                                value={d.runAt?.slice(0, 16) || ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const dt = new Date(v);
+                                  updateBulkDraft(idx, {
+                                    runAt: isNaN(dt.getTime()) ? d.runAt : dt.toISOString(),
+                                  });
+                                  setActiveDraftIndex(idx);
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <select
+                                value={d.body?.cta || "CALL_NOW"}
+                                onChange={(e) => {
+                                  updateBulkDraftBody(idx, { cta: e.target.value });
+                                  setActiveDraftIndex(idx);
+                                }}
+                              >
+                                {CTA_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                value={d.body?.linkUrl || ""}
+                                onChange={(e) => {
+                                  updateBulkDraftBody(idx, { linkUrl: e.target.value });
+                                  setActiveDraftIndex(idx);
+                                }}
+                                placeholder="https://..."
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={d.body?.mediaUrl || ""}
+                                onChange={(e) => {
+                                  updateBulkDraftBody(idx, { mediaUrl: e.target.value });
+                                  setActiveDraftIndex(idx);
+                                }}
+                                placeholder="/uploads/..."
+                              />
+                            </td>
+                            <td>
+                              <div className="bulk-snippet">
+                                {(d.body?.postText || "").trim() || "—"}
+                              </div>
+                            </td>
+                            <td>
+                              <div className="action-row">
+                                <button
+                                  className="btn btn--ghost btn--small"
+                                  type="button"
+                                  onClick={() => setActiveDraftIndex(idx)}
+                                  disabled={activeDraftIndex === idx}
+                                >
+                                  {activeDraftIndex === idx ? "Previewing" : "Preview"}
+                                </button>
+                                <button
+                                  className="btn btn--ghost btn--small"
+                                  type="button"
+                                  onClick={() =>
+                                    setBulkDrafts((prev) => prev.filter((_, i) => i !== idx))
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                {activeBulkDraft ? (
+                  <div className="panel-section bulk-draft-shell">
+                    <div className="bulk-draft-header">
+                      <div>
+                        <div className="muted small">
+                          Draft {activeDraftIndex + 1} of {bulkDrafts.length} ·{" "}
+                          {activeBulkDraft.runAt
+                            ? new Date(activeBulkDraft.runAt).toLocaleString()
+                            : "No time set"}
+                        </div>
+                        <div className="bulk-draft-meta">
+                          <span>CTA: {CTA_LABELS[activeDraftBody.cta] || activeDraftBody.cta || "—"}</span>
+                          <span>Media: {activeDraftBody.mediaUrl || "None"}</span>
+                        </div>
+                      </div>
+                      <div className="action-row">
+                        <button
+                          className="btn btn--ghost btn--small"
+                          type="button"
+                          onClick={() => setActiveDraftIndex((i) => Math.max(0, i - 1))}
+                          disabled={activeDraftIndex <= 0}
+                        >
+                          Previous
+                        </button>
+                        <button
+                          className="btn btn--ghost btn--small"
+                          type="button"
+                          onClick={() =>
+                            setActiveDraftIndex((i) =>
+                              Math.min(bulkDrafts.length - 1, i + 1)
+                            )
+                          }
+                          disabled={activeDraftIndex >= bulkDrafts.length - 1}
+                        >
+                          Next
+                        </button>
+                        <button
+                          className="btn btn--indigo btn--small"
+                          type="button"
+                          onClick={() => regenerateBulkDraft(activeDraftIndex)}
+                          disabled={
+                            bulkBusy ||
+                            regeneratingDraftIndex === activeDraftIndex
+                          }
+                        >
+                          {regeneratingDraftIndex === activeDraftIndex
+                            ? "Regenerating..."
+                            : "Regenerate text"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="bulk-draft-grid">
+                      <div className="post-preview">
+                        <div className="post-preview__header">
+                          <div>
+                            <div className="post-preview__eyebrow">Posting to</div>
+                            <div className="post-preview__profile">
+                              {selectedProfile?.businessName ||
+                                activeBulkDraft.profileId ||
+                                selectedId ||
+                                "—"}
+                              {selectedProfile?.city ? " · " + selectedProfile.city : ""}
+                            </div>
+                          </div>
+                          <div className="post-preview__badge">
+                            {getPostTypeLabel(activeDraftBody.topicType || "STANDARD")}
+                          </div>
+                        </div>
+                        <div className="post-preview__copy">
+                          {(activeDraftBody.postText || "").trim() || "—"}
+                        </div>
+                        <div className="post-preview__cta-row">
+                          <a
+                            className={
+                              "preview-cta-btn" + (activeDraftHref ? "" : " is-disabled")
+                            }
+                            href={activeDraftHref || undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => {
+                              if (!activeDraftHref) e.preventDefault();
+                            }}
+                          >
+                            {CTA_LABELS[activeDraftCta] || "CTA button"}
+                          </a>
+                          <div className="post-preview__meta">
+                            <div>
+                              Link:{" "}
+                              {activeDraftLink ? (
+                                activeDraftHref ? (
+                                  <a href={activeDraftHref} target="_blank" rel="noreferrer">
+                                    {activeDraftLink}
+                                  </a>
+                                ) : (
+                                  <span className="error-text">
+                                    {activeDraftCta === "CALL_NOW"
+                                      ? "Use tel:+1... or https://"
+                                      : "Needs https:// link"}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="muted small">No link provided</span>
+                              )}
+                            </div>
+                            <div>
+                              Photo:{" "}
+                              {activeDraftBody.mediaUrl ? (
+                                <span className="muted small">{activeDraftBody.mediaUrl}</span>
+                              ) : (
+                                <span className="muted small">None attached</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {resolveMediaPreviewUrl(activeDraftMedia, backendBase) ? (
+                          <div className="post-preview__media">
+                            <img
+                              src={resolveMediaPreviewUrl(activeDraftMedia, backendBase)}
+                              alt="Post media preview"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="post-preview__footer muted small">
+                          Live preview of the selected draft.
+                        </div>
+                      </div>
+                      <div className="bulk-draft-editor">
+                        <label className="field-label">Post copy</label>
+                        <textarea
+                          value={activeDraftBody.postText || ""}
+                          onChange={(e) => {
+                            updateBulkDraftBody(activeDraftIndex, { postText: e.target.value });
+                          }}
+                          placeholder="Edit the generated text before scheduling."
+                        />
+                        <label className="field-label">CTA</label>
+                        <select
+                          value={activeDraftBody.cta || "CALL_NOW"}
+                          onChange={(e) => {
+                            updateBulkDraftBody(activeDraftIndex, { cta: e.target.value });
+                          }}
+                        >
+                          {CTA_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <label className="field-label">Link</label>
+                        <input
+                          value={activeDraftBody.linkUrl || ""}
+                          onChange={(e) =>
+                            updateBulkDraftBody(activeDraftIndex, { linkUrl: e.target.value })
+                          }
+                          placeholder="https://..."
+                          disabled={activeDraftCta === "CALL_NOW"}
+                        />
+                        {linkOptions.length > 0 && (
+                          <select
+                            defaultValue=""
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v) {
+                                updateBulkDraftBody(activeDraftIndex, { linkUrl: v });
+                              }
+                            }}
+                            disabled={activeDraftCta === "CALL_NOW"}
+                          >
+                            <option value="">Pick saved link</option>
+                            {linkOptions.map((u, idx) => (
+                              <option key={idx} value={u}>
+                                {u}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <label className="field-label">Media URL</label>
+                        <input
+                          value={activeDraftBody.mediaUrl || ""}
+                          onChange={(e) =>
+                            updateBulkDraftBody(activeDraftIndex, { mediaUrl: e.target.value })
+                          }
+                          placeholder="/uploads/..."
+                        />
+                        <label className="field-label">Runs at</label>
+                        <input
+                          type="datetime-local"
+                          value={activeBulkDraft.runAt?.slice(0, 16) || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            const dt = new Date(v);
+                            updateBulkDraft(activeDraftIndex, {
+                              runAt: isNaN(dt.getTime())
+                                ? activeBulkDraft.runAt
+                                : dt.toISOString(),
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </section>
           )}
 
@@ -1523,7 +2606,45 @@ export default function App() {
             setMediaGalleryOpen(false);
             notify("Photo selected from gallery.");
           }}
+          onSelectMultiple={(values) => {
+            const list = Array.isArray(values) ? values : [];
+            setBulkImages(list.slice(0, 50));
+            setMediaUrl(list[0] || "");
+            notify(`${list.length} photo(s) selected for bulk scheduling.`);
+          }}
+          onPreview={(src) => setLightboxSrc(src || "")}
+          onDeleteUpload={(raw) => {
+            const normalize = (val) => {
+              const m = String(val || "").match(/(\/uploads\/[^?#]+)/);
+              return m ? m[1] : String(val || "");
+            };
+            setUploadsInfo((prev) => {
+              if (!prev) return prev;
+              const key = normalize(raw);
+              const nextUrls = (prev.urls || []).filter((u) => normalize(u) !== key);
+              const nextFiles = (prev.files || []).filter((f) => normalize(f) !== key);
+              const nextCount = Math.max(
+                0,
+                prev.count != null
+                  ? prev.count - 1
+                  : Math.max(nextUrls.length, nextFiles.length)
+              );
+              return { ...prev, urls: nextUrls, files: nextFiles, count: nextCount };
+            });
+          }}
         />
+        {lightboxSrc ? (
+          <div className="lightbox-backdrop" onClick={() => setLightboxSrc("")}>
+            <div
+              className="lightbox-body"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              <img src={lightboxSrc} alt="Preview" />
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
