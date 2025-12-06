@@ -216,6 +216,10 @@ const api = {
       method: "DELETE",
     });
   },
+  async getCycleState(profileId = "") {
+    const qs = profileId ? `?profileId=${encodeURIComponent(profileId)}` : "";
+    return doFetch(`/cycle-state${qs}`);
+  },
   async draftScheduledPosts(payload) {
     return doFetch("/scheduled-posts/draft", {
       method: "POST",
@@ -228,6 +232,26 @@ const api = {
       body: JSON.stringify({ items }),
     });
   },
+  async getScheduledPhotos() {
+    return doFetch("/photo-scheduled");
+  },
+  async createScheduledPhoto(payload) {
+    return doFetch("/photo-scheduled", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async saveScheduledPhotosBulk(items) {
+    return doFetch("/photo-scheduled/bulk", {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    });
+  },
+  async deleteScheduledPhoto(id) {
+    return doFetch(`/photo-scheduled/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
 };
 
 export async function updateProfileBulkAccess(profileId, enabled) {
@@ -237,10 +261,20 @@ export async function updateProfileBulkAccess(profileId, enabled) {
   });
 }
 
-export async function uploadPhoto(file, baseOverride) {
+import { embedPhotoExif } from "./photoExif";
+
+export async function uploadPhoto(file, baseOverride, photoMeta = null) {
   const base = (baseOverride || (await getApiBase())).replace(/\/+$/, "");
+  let toSend = file;
+  if (photoMeta) {
+    try {
+      toSend = await embedPhotoExif(file, photoMeta);
+    } catch (_e) {
+      toSend = file;
+    }
+  }
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", toSend);
   const res = await fetch(base + "/upload", {
     method: "POST",
     body: form,

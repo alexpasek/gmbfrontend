@@ -27,10 +27,12 @@ function MediaGalleryModal({
   onClose,
   uploadsInfo,
   backendBase,
+  photoMeta,
   onSelect,
   onSelectMultiple,
   onPreview,
   onDeleteUpload,
+  onUploadComplete,
 }) {
   if (!open) return null;
 
@@ -40,12 +42,17 @@ function MediaGalleryModal({
   const [selected, setSelected] = React.useState([]);
   const [previewKey, setPreviewKey] = React.useState("");
   const [deletingKey, setDeletingKey] = React.useState("");
+  const [deletingMany, setDeletingMany] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState("");
+  const fileInputRef = React.useRef(null);
 
   React.useEffect(() => {
     const list = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
     setItems(list);
     setSelected([]);
     setPreviewKey("");
+    setUploadError("");
   }, [uploadsInfo]);
 
   function toggle(key) {
@@ -77,6 +84,52 @@ function MediaGalleryModal({
     }
   }
 
+  async function handleUploadFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    if (!backendBase) {
+      setUploadError("Backend not ready; please try again.");
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    const added = [];
+    for (const file of fileList) {
+      try {
+        const res = await uploadPhoto(file, backendBase, photoMeta);
+        if (res && res.url) {
+          added.push(res.url);
+        }
+      } catch (e) {
+        setUploadError(e.message || "Upload failed");
+      }
+    }
+    if (added.length) {
+      setItems((prev) => [...added, ...prev]);
+      setSelected([]);
+      if (onUploadComplete) onUploadComplete(added);
+    }
+    setUploading(false);
+  }
+
+  async function deleteSelected() {
+    if (!selected.length) return;
+    setDeletingMany(true);
+    for (const key of selected) {
+      // handleDelete updates state and onDeleteUpload
+      // eslint-disable-next-line no-await-in-loop
+      await handleDelete(key);
+    }
+    setDeletingMany(false);
+  }
+
+  function onDropFiles(e) {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (files && files.length) {
+      handleUploadFiles(files);
+    }
+  }
+
   async function handleDelete(raw) {
     if (!raw) return;
     try {
@@ -101,6 +154,8 @@ function MediaGalleryModal({
         onClick={(e) => {
           e.stopPropagation();
         }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDropFiles}
       >
         <div className="media-modal-header">
           <div>
@@ -117,14 +172,40 @@ function MediaGalleryModal({
         <div className="action-row" style={{ justifyContent: "space-between" }}>
           <div className="muted small">
             Selected {selected.length} item{selected.length === 1 ? "" : "s"}
+            {uploadError ? (
+              <span style={{ color: "#ff7a7a", marginLeft: 8 }}>{uploadError}</span>
+            ) : null}
           </div>
           <div className="action-row">
+            <label className="btn btn--ghost btn--small">
+              {uploading ? "Uploading..." : "Upload to gallery"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const files = e.target?.files;
+                  handleUploadFiles(files);
+                  if (e.target) e.target.value = "";
+                }}
+                disabled={uploading || !backendBase}
+              />
+            </label>
             <button
               className="btn btn--ghost btn--small"
               onClick={handleUseSelected}
               disabled={!selected.length}
             >
               Use selected
+            </button>
+            <button
+              className="btn btn--ghost btn--small"
+              onClick={deleteSelected}
+              disabled={!selected.length || deletingMany}
+            >
+              {deletingMany ? "Deleting..." : "Delete selected"}
             </button>
             <button className="btn btn--ghost btn--small" onClick={onClose}>
               Cancel
@@ -158,6 +239,13 @@ function MediaGalleryModal({
                   }
                   title={key}
                 >
+                  <div className="media-gallery-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(key)}
+                      onChange={() => toggle(key)}
+                    />
+                  </div>
                   <button
                     type="button"
                     className="media-gallery-thumb"
@@ -239,6 +327,7 @@ const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profiles", label: "Profiles & media" },
   { id: "bulk", label: "Bulk posting" },
+  { id: "photo-scheduler", label: "Photo scheduler" },
   { id: "scheduler", label: "Scheduler" },
   { id: "history", label: "Post history" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -298,8 +387,26 @@ export default function App() {
   const [cta, setCta] = useState("CALL_NOW");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkOptions, setLinkOptions] = useState([]);
+  const [reviewLink, setReviewLink] = useState("");
+  const [serviceAreaLink, setServiceAreaLink] = useState("");
+  const [areaMapLink, setAreaMapLink] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
   const [defaultPhone, setDefaultPhone] = useState("");
+  const [photoLat, setPhotoLat] = useState("");
+  const [photoLng, setPhotoLng] = useState("");
+  const [photoNeighbourhood, setPhotoNeighbourhood] = useState("");
+  const [photoKeywords, setPhotoKeywords] = useState("");
+  const [photoCategories, setPhotoCategories] = useState("");
+  const [photoJobs, setPhotoJobs] = useState([]);
+  const [photoJobsLoading, setPhotoJobsLoading] = useState(false);
+  const [photoSchedulerStatus, setPhotoSchedulerStatus] = useState("");
+  const [photoSchedMedia, setPhotoSchedMedia] = useState("");
+  const [photoSchedMediaList, setPhotoSchedMediaList] = useState([]);
+  const [photoSchedCaption, setPhotoSchedCaption] = useState("");
+  const [photoSchedDate, setPhotoSchedDate] = useState("");
+  const [photoSchedTime, setPhotoSchedTime] = useState("");
+  const [photoSchedCadence, setPhotoSchedCadence] = useState("DAILY1");
+  const [photoSchedCount, setPhotoSchedCount] = useState(3);
 
   const [schedStatus, setSchedStatus] = useState(null);
   const [schedConfig, setSchedConfig] = useState(null);
@@ -327,12 +434,17 @@ export default function App() {
   const linkSaveTimer = useRef(null);
   const linkInitRef = useRef(false);
   const [linkOptionsSaving, setLinkOptionsSaving] = useState(false);
+  const quickLinksSaveTimer = useRef(null);
+  const quickLinksInitRef = useRef(false);
+  const [quickLinksSaving, setQuickLinksSaving] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduledPosts, setScheduledPosts] = useState([]);
   const [scheduleStatus, setScheduleStatus] = useState("");
   const [editingScheduledId, setEditingScheduledId] = useState("");
   const generateRef = useRef(null);
+  const [cycleInfo, setCycleInfo] = useState(null);
+  const [cycleLoading, setCycleLoading] = useState(false);
   const [bulkImages, setBulkImages] = useState([]);
   const [bulkDrafts, setBulkDrafts] = useState([]);
   const [activeDraftIndex, setActiveDraftIndex] = useState(-1);
@@ -443,8 +555,16 @@ export default function App() {
         ? d.linkOptions
         : []
     );
+    setReviewLink(d.reviewLink || "");
+    setServiceAreaLink(d.serviceAreaLink || "");
+    setAreaMapLink(d.areaMapLink || "");
     setDefaultPhone(d.phone || p?.phone || "");
     setMediaUrl(d.mediaUrl || "");
+    setPhotoLat(d.photoLat || "");
+    setPhotoLng(d.photoLng || "");
+    setPhotoNeighbourhood(d.photoNeighbourhood || "");
+    setPhotoKeywords(d.photoKeywords || "");
+    setPhotoCategories(d.photoCategories || "");
     if (selectedId) refreshHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedProfile?.defaults]);
@@ -477,12 +597,20 @@ export default function App() {
     if (selectedId) {
       localStorage.setItem(STORAGE_KEYS.selectedProfileId, selectedId);
     }
+    loadCycleState(selectedId);
   }, [selectedId]);
 
   useEffect(() => {
     loadScheduledPosts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    if (tab === "photo-scheduler") {
+      loadPhotoJobs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedId]);
 
   useEffect(() => {
     if (!bulkDrafts.length) {
@@ -524,6 +652,33 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkOptions, selectedProfile?.profileId]);
 
+  useEffect(() => {
+    if (!selectedProfile || !selectedProfile.profileId) return;
+    if (!quickLinksInitRef.current) {
+      quickLinksInitRef.current = true;
+      return;
+    }
+    if (quickLinksSaveTimer.current) clearTimeout(quickLinksSaveTimer.current);
+    quickLinksSaveTimer.current = setTimeout(async () => {
+      setQuickLinksSaving(true);
+      try {
+        await api.updateProfileDefaults(selectedProfile.profileId, {
+          reviewLink: String(reviewLink || "").trim(),
+          serviceAreaLink: String(serviceAreaLink || "").trim(),
+          areaMapLink: String(areaMapLink || "").trim(),
+        });
+      } catch (e) {
+        notify(e.message || "Failed to save quick links");
+      } finally {
+        setQuickLinksSaving(false);
+      }
+    }, 500);
+    return () => {
+      if (quickLinksSaveTimer.current) clearTimeout(quickLinksSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewLink, serviceAreaLink, areaMapLink, selectedProfile?.profileId]);
+
   async function doPreview() {
     if (!selectedId) return notify("Select a profile first");
     setPreview("");
@@ -549,6 +704,25 @@ export default function App() {
     } finally {
       setPreviewing(false);
     }
+  }
+
+  function buildPhotoMeta() {
+    const profile = selectedProfile || {};
+    const city = profile.city || "";
+    return {
+      lat: photoLat || "",
+      lng: photoLng || "",
+      city,
+      neighbourhood:
+        photoNeighbourhood ||
+        (Array.isArray(profile.neighbourhoods) ? profile.neighbourhoods[0] : "") ||
+        "",
+      serviceKeywords:
+        photoKeywords || (Array.isArray(profile.keywords) ? profile.keywords.join(", ") : ""),
+      categoryKeywords: photoCategories || "",
+      businessName: profile.businessName || "",
+      website: profile.landingUrl || profile.defaults?.linkUrl || linkUrl || "",
+    };
   }
 
   function validateBeforePost(effectiveLink) {
@@ -692,6 +866,80 @@ export default function App() {
     } finally {
       setBusy(false);
       setTimeout(() => setScheduleStatus(""), 2000);
+    }
+  }
+
+  async function loadPhotoJobs() {
+    setPhotoJobsLoading(true);
+    try {
+      const res = await api.getScheduledPhotos();
+      const items = Array.isArray(res?.items) ? res.items : [];
+      const filtered = selectedId
+        ? items.filter((it) => it.profileId === selectedId)
+        : items;
+      filtered.sort((a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime());
+      setPhotoJobs(filtered);
+    } catch (e) {
+      notify(e.message || "Failed to load photo schedules");
+    } finally {
+      setPhotoJobsLoading(false);
+    }
+  }
+
+  async function schedulePhotosBulk() {
+    if (!selectedId) return notify("Select a profile first");
+    const mediaList = photoSchedMediaList.length
+      ? photoSchedMediaList
+      : photoSchedMedia
+      ? [photoSchedMedia]
+      : [];
+    if (!mediaList.length) return notify("Pick at least one photo for scheduling");
+    const baseDt = new Date(`${photoSchedDate}T${photoSchedTime || "00:00"}:00`);
+    if (isNaN(baseDt.getTime())) return notify("Set a valid start date/time");
+    const makeId = () =>
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2));
+    const requestedCount = Math.max(1, Math.min(100, parseInt(photoSchedCount, 10) || mediaList.length || 1));
+    const dayStep = photoSchedCadence === "DAILY2" ? 2 : photoSchedCadence === "DAILY3" ? 3 : 1;
+    const items = [];
+    for (let i = 0; i < requestedCount; i++) {
+      const runAt = new Date(baseDt.getTime() + i * dayStep * 86400000).toISOString();
+      const mediaUrl = mediaList[i % mediaList.length];
+      items.push({
+        id: makeId(),
+        profileId: selectedId,
+        runAt,
+        body: {
+          mediaUrl,
+          caption: photoSchedCaption || "",
+          meta: buildPhotoMeta(),
+        },
+        status: "QUEUED",
+      });
+    }
+    try {
+      setPhotoSchedulerStatus("saving");
+      await api.saveScheduledPhotosBulk(items);
+      notify(`Scheduled ${items.length} photo(s)`);
+      await loadPhotoJobs();
+      setPhotoSchedulerStatus("saved");
+    } catch (e) {
+      notify(e.message || "Failed to save photo schedules");
+      setPhotoSchedulerStatus("error");
+    } finally {
+      setTimeout(() => setPhotoSchedulerStatus(""), 2000);
+    }
+  }
+
+  async function deletePhotoJob(id) {
+    if (!id) return;
+    try {
+      await api.deleteScheduledPhoto(id);
+      notify("Deleted photo schedule");
+      await loadPhotoJobs();
+    } catch (e) {
+      notify(e.message || "Delete failed");
     }
   }
 
@@ -952,6 +1200,26 @@ export default function App() {
     return Promise.resolve();
   }
 
+  async function loadCycleState(profileId) {
+    if (!profileId) {
+      setCycleInfo(null);
+      return;
+    }
+    setCycleLoading(true);
+    try {
+      const res = await api.getCycleState(profileId);
+      const state = res?.state || {};
+      setCycleInfo({
+        nextTemplate: state.nextTemplate || "STANDARD",
+        lastUrl: state.lastUrl || "",
+      });
+    } catch (_e) {
+      setCycleInfo(null);
+    } finally {
+      setCycleLoading(false);
+    }
+  }
+
   async function deleteScheduled(id) {
     if (!id) return;
     setDeletingScheduledId(id);
@@ -1035,6 +1303,14 @@ export default function App() {
         linkOptions: linkOptions
           .map((u) => String(u || "").trim())
           .filter(Boolean),
+        reviewLink: String(reviewLink || "").trim(),
+        serviceAreaLink: String(serviceAreaLink || "").trim(),
+        areaMapLink: String(areaMapLink || "").trim(),
+        photoLat: String(photoLat || "").trim(),
+        photoLng: String(photoLng || "").trim(),
+        photoNeighbourhood: String(photoNeighbourhood || "").trim(),
+        photoKeywords: String(photoKeywords || "").trim(),
+        photoCategories: String(photoCategories || "").trim(),
       });
       notify("Defaults saved");
       const pr = await api.getProfiles();
@@ -1055,7 +1331,7 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const result = await uploadPhoto(file, backendBase);
+      const result = await uploadPhoto(file, backendBase, buildPhotoMeta());
       if (result && result.url) {
         setMediaUrl(result.url);
         notify("Photo uploaded from your computer.");
@@ -1080,7 +1356,7 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const result = await uploadPhoto(file, backendBase);
+      const result = await uploadPhoto(file, backendBase, buildPhotoMeta());
       if (result && result.url) {
         setBulkImages((prev) => [...prev, result.url].slice(-50));
         if (!mediaUrl) setMediaUrl(result.url);
@@ -1205,6 +1481,8 @@ export default function App() {
                 "Profiles, CTAs, media defaults, and quick composer."}
               {tab === "bulk" &&
                 "Toggle bulk inclusion and manage posting access."}
+              {tab === "photo-scheduler" &&
+                "Schedule photo-only uploads with geo-tag metadata."}
               {tab === "scheduler" &&
                 "Configure daily times and monitor the scheduler."}
               {tab === "history" &&
@@ -1467,6 +1745,114 @@ export default function App() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                  <div className="link-options">
+                    <div className="link-options__header">
+                      <span className="field-label">Quick links</span>
+                      <span className="muted small">
+                        {quickLinksSaving ? "Saving..." : "Auto-saved"}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => {
+                          const targetValue =
+                            linkUrl ||
+                            getFallbackLink(selectedProfile) ||
+                            "https://";
+                          if (!reviewLink) {
+                            setReviewLink(targetValue);
+                          } else if (!serviceAreaLink) {
+                            setServiceAreaLink(targetValue);
+                          } else if (!areaMapLink) {
+                            setAreaMapLink(targetValue);
+                          }
+                        }}
+                        disabled={!!reviewLink && !!serviceAreaLink && !!areaMapLink}
+                      >
+                        + Add link
+                      </button>
+                    </div>
+                    <div className="quick-links-grid">
+                      {[
+                        { label: "Reviews \u27a1", value: reviewLink, setter: setReviewLink },
+                        { label: "Service Area \u27a1", value: serviceAreaLink, setter: setServiceAreaLink },
+                        { label: "Area Map \u27a1", value: areaMapLink, setter: setAreaMapLink },
+                      ].map((item, idx) => (
+                        <div className="link-option-row" key={`quick-${idx}`}>
+                          <div className="field-label" style={{ minWidth: 120 }}>
+                            {item.label}
+                          </div>
+                          <input
+                            value={item.value}
+                            onChange={(e) => item.setter(e.target.value)}
+                            placeholder="https://your-site/page"
+                            style={{ flex: 1, minWidth: 280 }}
+                          />
+                          <div className="link-option-actions">
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--small"
+                              onClick={() => item.setter("")}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="panel-subsection">
+                    <div className="panel-subsection__header">
+                      <span className="field-label">Photo metadata defaults</span>
+                      <span className="muted small">
+                        Used to geo-tag uploaded images for this profile.
+                      </span>
+                    </div>
+                    <div className="two-col">
+                      <label className="field-label">Latitude</label>
+                      <input
+                        value={photoLat}
+                        onChange={(e) => setPhotoLat(e.target.value)}
+                        placeholder="51.0447"
+                      />
+                    </div>
+                    <div className="two-col">
+                      <label className="field-label">Longitude</label>
+                      <input
+                        value={photoLng}
+                        onChange={(e) => setPhotoLng(e.target.value)}
+                        placeholder="-114.0719"
+                      />
+                    </div>
+                    <div className="two-col">
+                      <label className="field-label">Neighbourhood (for EXIF)</label>
+                      <input
+                        value={photoNeighbourhood}
+                        onChange={(e) => setPhotoNeighbourhood(e.target.value)}
+                        placeholder="Kensington"
+                      />
+                    </div>
+                    <div className="two-col">
+                      <label className="field-label">Service keywords</label>
+                      <input
+                        value={photoKeywords}
+                        onChange={(e) => setPhotoKeywords(e.target.value)}
+                        placeholder="popcorn ceiling removal, drywall repair"
+                      />
+                    </div>
+                    <div className="two-col">
+                      <label className="field-label">Category keywords</label>
+                      <input
+                        value={photoCategories}
+                        onChange={(e) => setPhotoCategories(e.target.value)}
+                        placeholder="painting contractor, drywall finishing"
+                      />
+                    </div>
+                    <p className="muted small">
+                      When you upload via gallery or photo fields, JPEGs will be stamped with GPS + these keywords,
+                      plus the profile business name and website.
+                    </p>
                   </div>
                 </div>
                 <div className="panel-section">
@@ -1995,10 +2381,201 @@ export default function App() {
             </section>
           )}
 
+          {tab === "photo-scheduler" && (
+            <section className="panel-grid panel-grid--two">
+              <div className="panel">
+                <div className="panel-title">Schedule photo uploads</div>
+                <div className="panel-section">
+                  <label className="field-label">Photo URL</label>
+                  <input
+                    value={photoSchedMedia}
+                    onChange={(e) => setPhotoSchedMedia(e.target.value)}
+                    placeholder="/uploads/photo.jpg or https://..."
+                  />
+                  <p className="muted small">
+                    You can add up to 100 photos: pick multiple in the gallery or paste them below.
+                  </p>
+                  <div className="action-row">
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => {
+                        const val = photoSchedMedia.trim();
+                        if (!val) return;
+                        setPhotoSchedMediaList((prev) =>
+                          prev.includes(val) ? prev : [...prev, val].slice(0, 100)
+                        );
+                        setPhotoSchedMedia("");
+                      }}
+                    >
+                      Add to list
+                    </button>
+                    <span className="muted small">{photoSchedMediaList.length} in list</span>
+                  </div>
+                  {photoSchedMediaList.length > 0 && (
+                    <div className="chip-list">
+                      {photoSchedMediaList.map((url, idx) => (
+                        <div className="chip" key={idx}>
+                          <span className="chip-label">{url}</span>
+                          <button
+                            type="button"
+                            className="chip-remove"
+                            onClick={() =>
+                              setPhotoSchedMediaList((prev) =>
+                                prev.filter((_, i) => i !== idx)
+                              )
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="action-row">
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => setMediaGalleryOpen(true)}
+                    >
+                      Browse gallery
+                    </button>
+                    <span className="muted small">
+                      Pick an uploaded image (auto geo-tagged on upload).
+                    </span>
+                  </div>
+                </div>
+                <div className="panel-section">
+                  <label className="field-label">Caption (optional)</label>
+                  <textarea
+                    value={photoSchedCaption}
+                    onChange={(e) => setPhotoSchedCaption(e.target.value)}
+                    placeholder="Optional text to accompany the photo"
+                  />
+                </div>
+                <div className="panel-section two-col">
+                  <label className="field-label">Start date</label>
+                  <input
+                    type="date"
+                    value={photoSchedDate}
+                    onChange={(e) => setPhotoSchedDate(e.target.value)}
+                  />
+                  <label className="field-label">Start time</label>
+                  <input
+                    type="time"
+                    value={photoSchedTime}
+                    onChange={(e) => setPhotoSchedTime(e.target.value)}
+                  />
+                </div>
+                <div className="panel-section two-col">
+                  <label className="field-label">Cadence</label>
+                  <select
+                    value={photoSchedCadence}
+                    onChange={(e) => setPhotoSchedCadence(e.target.value)}
+                  >
+                    <option value="DAILY1">Daily</option>
+                    <option value="DAILY2">Every 2 days</option>
+                    <option value="DAILY3">Every 3 days</option>
+                  </select>
+                  <label className="field-label">Count</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={photoSchedCount}
+                    onChange={(e) => setPhotoSchedCount(e.target.value)}
+                  />
+                </div>
+                <div className="panel-section">
+                  <button
+                    className="btn btn--green"
+                    type="button"
+                    onClick={schedulePhotosBulk}
+                    disabled={!selectedProfile || photoSchedulerStatus === "saving"}
+                  >
+                    {photoSchedulerStatus === "saving" ? "Scheduling..." : "Schedule photos"}
+                  </button>
+                  <p className="muted small">
+                    Uses the photo metadata defaults (lat/lng, neighbourhood, keywords) for EXIF stamping already embedded when the photo was uploaded.
+                  </p>
+                </div>
+              </div>
+              <div className="panel">
+                <div className="panel-title">Queued photo jobs</div>
+                <div className="panel-section diag-shell">
+                  {photoJobsLoading ? (
+                    <div className="muted small">Loading…</div>
+                  ) : photoJobs.length === 0 ? (
+                    <div className="muted small">No scheduled photos.</div>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Profile</th>
+                          <th>Media</th>
+                          <th>Status</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {photoJobs.map((it) => (
+                          <tr key={it.id}>
+                            <td>{new Date(it.runAt).toLocaleString()}</td>
+                            <td>{selectedProfile?.businessName || it.profileId}</td>
+                            <td className="muted small">{it.body?.mediaUrl || "—"}</td>
+                            <td>{it.status || "QUEUED"}</td>
+                            <td>
+                              <button
+                                className="btn btn--ghost btn--small"
+                                type="button"
+                                onClick={() => deletePhotoJob(it.id)}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           {tab === "history" && (
             <section className="panel-grid panel-grid--two">
               <div className="panel">
                 <div className="panel-title">Post history</div>
+                <div className="panel-section stats-grid">
+                  <div>
+                    <div className="muted small">Last GBP post</div>
+                    {cycleLoading ? (
+                      <div className="muted small">Loading…</div>
+                    ) : cycleInfo?.lastUrl ? (
+                      <a href={cycleInfo.lastUrl} target="_blank" rel="noreferrer">
+                        {cycleInfo.lastUrl}
+                      </a>
+                    ) : (
+                      <div className="muted small">Unknown</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="muted small">Next template</div>
+                    <strong>{cycleInfo?.nextTemplate || "STANDARD"}</strong>
+                  </div>
+                  <div>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => loadCycleState(selectedId)}
+                      disabled={!selectedId || cycleLoading}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
                 <PostsHistoryPanel
                   selectedProfileId={selectedId}
                   refreshToken={historyRefreshToken}
@@ -2601,8 +3178,10 @@ export default function App() {
           onClose={() => setMediaGalleryOpen(false)}
           uploadsInfo={uploadsInfo}
           backendBase={backendBase}
+          photoMeta={buildPhotoMeta()}
           onSelect={(value) => {
             setMediaUrl(value);
+            setPhotoSchedMedia(value);
             setMediaGalleryOpen(false);
             notify("Photo selected from gallery.");
           }}
@@ -2610,6 +3189,7 @@ export default function App() {
             const list = Array.isArray(values) ? values : [];
             setBulkImages(list.slice(0, 50));
             setMediaUrl(list[0] || "");
+            setPhotoSchedMediaList(list.slice(0, 100));
             notify(`${list.length} photo(s) selected for bulk scheduling.`);
           }}
           onPreview={(src) => setLightboxSrc(src || "")}
@@ -2631,6 +3211,13 @@ export default function App() {
               );
               return { ...prev, urls: nextUrls, files: nextFiles, count: nextCount };
             });
+          }}
+          onUploadComplete={async () => {
+            try {
+              await loadUploadsInfo();
+            } catch (e) {
+              console.error(e);
+            }
           }}
         />
         {lightboxSrc ? (

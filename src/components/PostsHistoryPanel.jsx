@@ -61,6 +61,8 @@ export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
               <th>Profile</th>
               <th>Status</th>
               <th>CTA</th>
+              <th>Link</th>
+              <th>GBP URL</th>
               <th>Photo</th>
             </tr>
           </thead>
@@ -75,6 +77,26 @@ export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
                 <td>{profiles[it.profileId] || it.profileId || "—"}</td>
                 <td>{it.status || "—"}</td>
                 <td>{it.cta || "—"}</td>
+                <td>
+                  {it.linkUrl ? (
+                    <a href={it.linkUrl} target="_blank" rel="noreferrer">
+                      {it.linkUrl}
+                    </a>
+                  ) : (
+                    <span className="muted small">—</span>
+                  )}
+                </td>
+                <td>
+                  {it.postedUrl ? (
+                    <a href={it.postedUrl} target="_blank" rel="noreferrer">
+                      {it.postedUrl}
+                    </a>
+                  ) : it.gmbPostId ? (
+                    <span className="muted small">{it.gmbPostId}</span>
+                  ) : (
+                    <span className="muted small">—</span>
+                  )}
+                </td>
                 <td>
                   {it.usedImage || Number(it.mediaCount || 0) > 0 ? "Yes" : "No"}
                 </td>
