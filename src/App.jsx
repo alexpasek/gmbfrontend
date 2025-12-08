@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import api, {
   getApiBase,
   uploadPhoto,
+  uploadPhotos,
   updateProfileBulkAccess,
 } from "./lib/api";
 import "./App.css";
 import BackendBadge from "./components/BackendBadge";
 import PostsHistoryPanel from "./components/PostsHistoryPanel";
+import PhotoScheduleCalendar from "./components/PhotoScheduleCalendar";
 
 /** Resolve a URL we can actually <img src> */
 function resolveMediaPreviewUrl(mediaUrl, backendBase) {
@@ -33,6 +35,7 @@ function MediaGalleryModal({
   onPreview,
   onDeleteUpload,
   onUploadComplete,
+  notify: notifyProp,
 }) {
   if (!open) return null;
 
@@ -43,9 +46,12 @@ function MediaGalleryModal({
   const [previewKey, setPreviewKey] = React.useState("");
   const [deletingKey, setDeletingKey] = React.useState("");
   const [deletingMany, setDeletingMany] = React.useState(false);
+  const [deletingAll, setDeletingAll] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState("");
   const fileInputRef = React.useRef(null);
+  const notifySafe = notifyProp || (() => {});
+  const lastSelectedRef = React.useRef(null);
 
   React.useEffect(() => {
     const list = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
@@ -59,6 +65,22 @@ function MediaGalleryModal({
     setSelected((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
+  }
+
+  function toggleWithRange(key, index, event) {
+    if (event?.shiftKey && lastSelectedRef.current != null) {
+      const start = Math.min(lastSelectedRef.current, index);
+      const end = Math.max(lastSelectedRef.current, index);
+      const rangeKeys = items.slice(start, end + 1);
+      setSelected((prev) => {
+        const set = new Set(prev);
+        rangeKeys.forEach((k) => set.add(k));
+        return Array.from(set);
+      });
+    } else {
+      toggle(key);
+    }
+    lastSelectedRef.current = index;
   }
 
   function normalizeValue(raw) {
@@ -92,21 +114,22 @@ function MediaGalleryModal({
     }
     setUploading(true);
     setUploadError("");
-    const added = [];
-    for (const file of fileList) {
-      try {
-        const res = await uploadPhoto(file, backendBase, photoMeta);
-        if (res && res.url) {
-          added.push(res.url);
-        }
-      } catch (e) {
-        setUploadError(e.message || "Upload failed");
+    const meta = typeof photoMeta === "function" ? photoMeta() : photoMeta;
+    try {
+      const { urls = [], failed = [] } = await uploadPhotos(fileList, backendBase, meta);
+      if (urls.length) {
+        setItems((prev) => [...urls, ...prev]);
+        setSelected([]);
+        if (onUploadComplete) onUploadComplete(urls);
+        notifySafe(
+          `Uploaded ${urls.length} file(s)` +
+            (failed.length ? `, failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+        );
+      } else if (failed.length) {
+        notifySafe(`Failed to upload: ${failed.map((f) => f.name || f).join(", ")}`);
       }
-    }
-    if (added.length) {
-      setItems((prev) => [...added, ...prev]);
-      setSelected([]);
-      if (onUploadComplete) onUploadComplete(added);
+    } catch (e) {
+      setUploadError(e.message || "Upload failed");
     }
     setUploading(false);
   }
@@ -120,6 +143,16 @@ function MediaGalleryModal({
       await handleDelete(key);
     }
     setDeletingMany(false);
+  }
+
+  async function deleteAll() {
+    if (!items.length) return;
+    setDeletingAll(true);
+    for (const key of items) {
+      // eslint-disable-next-line no-await-in-loop
+      await handleDelete(key);
+    }
+    setDeletingAll(false);
   }
 
   function onDropFiles(e) {
@@ -177,18 +210,18 @@ function MediaGalleryModal({
             ) : null}
           </div>
           <div className="action-row">
-            <label className="btn btn--ghost btn--small">
-              {uploading ? "Uploading..." : "Upload to gallery"}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const files = e.target?.files;
-                  handleUploadFiles(files);
-                  if (e.target) e.target.value = "";
+                <label className="btn btn--ghost btn--small">
+                  {uploading ? "Uploading..." : "Upload to gallery"}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const files = e.target?.files;
+                      handleUploadFiles(files);
+                      if (e.target) e.target.value = "";
                 }}
                 disabled={uploading || !backendBase}
               />
@@ -207,6 +240,13 @@ function MediaGalleryModal({
             >
               {deletingMany ? "Deleting..." : "Delete selected"}
             </button>
+            <button
+              className="btn btn--ghost btn--small"
+              onClick={deleteAll}
+              disabled={!items.length || deletingAll}
+            >
+              {deletingAll ? "Deleting all..." : "Delete all"}
+            </button>
             <button className="btn btn--ghost btn--small" onClick={onClose}>
               Cancel
             </button>
@@ -219,7 +259,7 @@ function MediaGalleryModal({
           </div>
         ) : (
           <div className="media-gallery-grid">
-            {items.map((raw) => {
+            {items.map((raw, idx) => {
               const key = String(raw);
               const href = /^https?:\/\//i.test(key)
                 ? key
@@ -249,8 +289,9 @@ function MediaGalleryModal({
                   <button
                     type="button"
                     className="media-gallery-thumb"
-                    onClick={() => {
+                    onClick={(e) => {
                       setPreviewKey(key);
+                      toggleWithRange(key, idx, e);
                       if (onPreview) {
                         onPreview(resolveMediaPreviewUrl(key, backendBase));
                       }
@@ -261,7 +302,7 @@ function MediaGalleryModal({
                   <button
                     type="button"
                     className="media-gallery-select"
-                    onClick={() => toggle(key)}
+                    onClick={(e) => toggleWithRange(key, idx, e)}
                   >
                     <div className="media-gallery-label">{label}</div>
                     <div className="muted small">
@@ -367,6 +408,179 @@ function resolveCtaLink(cta, link) {
   return /^https?:\/\//i.test(link) ? link : "";
 }
 
+function parseNeighbourhoodInput(input) {
+  if (!input) return [];
+  return String(input)
+    .split(/\r?\n|,/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function randomNeighbourhood(list, fallback = "") {
+  if (Array.isArray(list) && list.length) {
+    const idx = Math.floor(Math.random() * list.length);
+    return list[idx];
+  }
+  return fallback || "";
+}
+
+function randomizeCoords(lat, lng, radiusMeters = 0) {
+  const baseLat = parseFloat(lat);
+  const baseLng = parseFloat(lng);
+  const radius = Math.max(0, Number(radiusMeters) || 0);
+  if (isNaN(baseLat) || isNaN(baseLng) || radius <= 0) {
+    return { lat: lat || "", lng: lng || "" };
+  }
+  const metersPerDegLat = 111111;
+  const metersPerDegLng =
+    Math.cos((baseLat * Math.PI) / 180) * metersPerDegLat || metersPerDegLat;
+  const r = Math.sqrt(Math.random()) * radius;
+  const theta = Math.random() * Math.PI * 2;
+  const dx = (r * Math.cos(theta)) / metersPerDegLng;
+  const dy = (r * Math.sin(theta)) / metersPerDegLat;
+  const nextLat = +(baseLat + dy).toFixed(6);
+  const nextLng = +(baseLng + dx).toFixed(6);
+  return { lat: nextLat, lng: nextLng };
+}
+
+function normalizeCityName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function addGeoLogHelper(setter, msg, data = null) {
+  const entry = {
+    ts: new Date().toISOString(),
+    msg,
+    data
+  };
+  console.log("[geo]", msg, data || "");
+  setter((prev) => [entry, ...prev].slice(0, 30));
+}
+
+function buildStaticMapUrl(lat, lng, zoom = 14, size = "800x380") {
+  if (!lat || !lng || isNaN(lat) || isNaN(lng)) return "";
+  return (
+    "https://staticmap.openstreetmap.de/staticmap.php" +
+    `?center=${lat},${lng}` +
+    `&zoom=${zoom}` +
+    `&size=${size}` +
+    `&markers=${lat},${lng},red`
+  );
+}
+
+function buildEmbedMapUrl(bounds) {
+  if (!bounds) return "";
+  const { west, south, east, north } = bounds;
+  if (
+    west == null ||
+    south == null ||
+    east == null ||
+    north == null ||
+    [west, south, east, north].some((v) => isNaN(v))
+  )
+    return "";
+  const lat = (north + south) / 2;
+  const lng = (east + west) / 2;
+  return (
+    "https://www.openstreetmap.org/export/embed.html" +
+    `?bbox=${west},${south},${east},${north}` +
+    "&layer=mapnik" +
+    `&marker=${lat},${lng}`
+  );
+}
+
+function computeMapBounds(lat, lng, radiusMeters = 2000) {
+  if (isNaN(lat) || isNaN(lng)) return null;
+  const delta = Math.max(0.01, radiusMeters / 111000);
+  return {
+    west: +(lng - delta).toFixed(5),
+    south: +(lat - delta).toFixed(5),
+    east: +(lng + delta).toFixed(5),
+    north: +(lat + delta).toFixed(5)
+  };
+}
+
+async function fetchOverpassPlaces(city, lat, lng, radiusMeters = 15000) {
+  const centerOk = !isNaN(lat) && !isNaN(lng);
+  if (!city && !centerOk) return [];
+  const query = centerOk
+    ? `
+      [out:json][timeout:25];
+      (
+        node["place"](around:${radiusMeters},${lat},${lng});
+        way["place"](around:${radiusMeters},${lat},${lng});
+        relation["place"](around:${radiusMeters},${lat},${lng});
+      );
+      out center 60;
+    `
+    : `
+      [out:json][timeout:25];
+      area["name"="${city}"];
+      (
+        node(area)["place"];
+        way(area)["place"];
+        relation(area)["place"];
+      );
+      out center 60;
+    `;
+  const body = query.replace(/\s+/g, " ").trim();
+  const res = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `data=${encodeURIComponent(body)}`
+  });
+  if (!res.ok) throw new Error("Overpass lookup failed");
+  const data = await res.json();
+  const out = [];
+  (data.elements || []).forEach((el) => {
+    const name = el.tags && (el.tags.name || el.tags["name:en"]);
+    if (!name) return;
+    const latVal = el.lat || (el.center && el.center.lat);
+    const lngVal = el.lon || (el.center && el.center.lon);
+    out.push({
+      name: String(name).trim(),
+      lat: latVal != null ? +latVal : null,
+      lng: lngVal != null ? +lngVal : null
+    });
+  });
+  return out;
+}
+
+function buildAutoCaption(profile, meta = {}, fallbackKeywords = "") {
+  const name = (profile && profile.businessName) || "";
+  const city = meta.city || profile?.city || "";
+  const neighbourhood = meta.neighbourhood || "";
+  const keywords = String(fallbackKeywords || "").trim();
+  const pieces = [
+    keywords || "Popcorn ceiling removal",
+    city || "",
+    neighbourhood || ""
+  ]
+    .map((p) => String(p || "").trim())
+    .filter(Boolean)
+    .join(" • ");
+  const label = pieces || "Popcorn ceiling removal";
+  return name ? `${label} — ${name}` : label;
+}
+
 export default function App() {
   const [health, setHealth] = useState(null);
   const [version, setVersion] = useState(null);
@@ -394,10 +608,21 @@ export default function App() {
   const [defaultPhone, setDefaultPhone] = useState("");
   const [photoLat, setPhotoLat] = useState("");
   const [photoLng, setPhotoLng] = useState("");
+  const [photoCity, setPhotoCity] = useState("");
   const [photoNeighbourhood, setPhotoNeighbourhood] = useState("");
+  const [photoNeighbourhoodsInput, setPhotoNeighbourhoodsInput] = useState("");
+  const [photoRandomizeCoords, setPhotoRandomizeCoords] = useState(false);
+  const [photoRandomizeRadius, setPhotoRandomizeRadius] = useState(200);
+  const [photoRandomizeKeywords, setPhotoRandomizeKeywords] = useState(false);
+  const [photoSearchRadius, setPhotoSearchRadius] = useState(10); // km
   const [photoKeywords, setPhotoKeywords] = useState("");
   const [photoCategories, setPhotoCategories] = useState("");
+  const [neighbourhoodsLoading, setNeighbourhoodsLoading] = useState(false);
+  const [savingPhotoMeta, setSavingPhotoMeta] = useState(false);
+  const [neighbourhoodResults, setNeighbourhoodResults] = useState([]);
+  const [mapBounds, setMapBounds] = useState(null);
   const [photoJobs, setPhotoJobs] = useState([]);
+  const [photoJobsHistory, setPhotoJobsHistory] = useState([]);
   const [photoJobsLoading, setPhotoJobsLoading] = useState(false);
   const [photoSchedulerStatus, setPhotoSchedulerStatus] = useState("");
   const [photoSchedMedia, setPhotoSchedMedia] = useState("");
@@ -407,6 +632,7 @@ export default function App() {
   const [photoSchedTime, setPhotoSchedTime] = useState("");
   const [photoSchedCadence, setPhotoSchedCadence] = useState("DAILY1");
   const [photoSchedCount, setPhotoSchedCount] = useState(3);
+  const [editingPhotoJobId, setEditingPhotoJobId] = useState("");
 
   const [schedStatus, setSchedStatus] = useState(null);
   const [schedConfig, setSchedConfig] = useState(null);
@@ -457,7 +683,22 @@ export default function App() {
   const [autoCadenceDays, setAutoCadenceDays] = useState(1);
   const [lightboxSrc, setLightboxSrc] = useState("");
   const [deletingScheduledId, setDeletingScheduledId] = useState("");
-
+  const [photoMetaSample, setPhotoMetaSample] = useState(null);
+  const [mediaGalleryContext, setMediaGalleryContext] = useState("profile");
+  const [geoTestSamples, setGeoTestSamples] = useState([]);
+  const [geoLogs, setGeoLogs] = useState([]);
+  const [latestPhotos, setLatestPhotos] = useState([]);
+  const [latestPhotosLoading, setLatestPhotosLoading] = useState(false);
+  const [latestPhotosDebug, setLatestPhotosDebug] = useState([]);
+  const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] = useState(false);
+  const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
+  const schedulingBusy =
+    photoSchedulerStatus === "saving" ||
+    photoSchedulerStatus === "stamping" ||
+    photoSchedulerStatus === "posting";
+  const mapBoundsRef = useRef(null);
+  const cityCenterRef = useRef({ lat: null, lng: null });
+  const cityLookupTimer = useRef(null);
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.profileId === selectedId),
     [profiles, selectedId]
@@ -477,6 +718,71 @@ export default function App() {
       : activeDraftBody.linkUrl || "";
   const activeDraftMedia = activeDraftBody.mediaUrl || "";
   const activeDraftHref = resolveCtaLink(activeDraftCta, activeDraftLink);
+  const photoNeighbourhoodOptions = useMemo(
+    () => parseNeighbourhoodInput(photoNeighbourhoodsInput),
+    [photoNeighbourhoodsInput]
+  );
+  const neighbourhoodOptionsDetailed = useMemo(() => {
+    if (neighbourhoodResults.length) return neighbourhoodResults;
+    return parseNeighbourhoodInput(photoNeighbourhoodsInput).map((name) => ({
+      name,
+      lat: null,
+      lng: null
+    }));
+  }, [neighbourhoodResults, photoNeighbourhoodsInput]);
+  const photoPreviewMedia = useMemo(() => {
+    const src = photoSchedMediaList[0] || photoSchedMedia || "";
+    return resolveMediaPreviewUrl(src, backendBase);
+  }, [photoSchedMediaList, photoSchedMedia, backendBase]);
+  const photoPreviewCaption = useMemo(() => {
+    const meta = {
+      city: photoCity || selectedProfile?.city || "",
+      neighbourhood:
+        photoNeighbourhood ||
+        photoNeighbourhoodOptions[0] ||
+        (Array.isArray(selectedProfile?.neighbourhoods) ? selectedProfile.neighbourhoods[0] : "") ||
+        ""
+    };
+    return photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+  }, [
+    photoSchedCaption,
+    selectedProfile,
+    photoCity,
+    photoNeighbourhood,
+    photoNeighbourhoodOptions,
+    photoKeywords
+  ]);
+  const logGeo = (msg, data = null) => addGeoLogHelper(setGeoLogs, msg, data);
+  const mapBoundsEffective = mapBounds || mapBoundsRef.current;
+  const mapCenter = useMemo(() => {
+    const candidates = [
+      {
+        lat: parseFloat(photoLat),
+        lng: parseFloat(photoLng)
+      },
+      {
+        lat: cityCenterRef.current.lat,
+        lng: cityCenterRef.current.lng
+      },
+      neighbourhoodResults.find((n) => n.lat != null && n.lng != null),
+      { lat: 43.6532, lng: -79.3832 } // Toronto fallback
+    ];
+    const pick = candidates.find(
+      (c) => c && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))
+    );
+    return pick ? { lat: parseFloat(pick.lat), lng: parseFloat(pick.lng) } : null;
+  }, [photoLat, photoLng, neighbourhoodResults]);
+
+  const mapPreviewUrl = useMemo(() => {
+    if (!mapCenter) return "";
+    return buildStaticMapUrl(mapCenter.lat, mapCenter.lng, 14, "900x420");
+  }, [mapCenter]);
+
+  const mapEmbedUrl = useMemo(() => {
+    if (mapBoundsEffective) return buildEmbedMapUrl(mapBoundsEffective);
+    if (mapCenter) return buildEmbedMapUrl(computeMapBounds(mapCenter.lat, mapCenter.lng, 2000));
+    return "";
+  }, [mapBoundsEffective, mapCenter]);
 
   const phoneCandidate = useMemo(() => {
     const raw =
@@ -562,9 +868,24 @@ export default function App() {
     setMediaUrl(d.mediaUrl || "");
     setPhotoLat(d.photoLat || "");
     setPhotoLng(d.photoLng || "");
+    // Always start from the profile’s city; overrides can be re-set manually
+    setPhotoCity(p?.city || d.photoCityOverride || "");
     setPhotoNeighbourhood(d.photoNeighbourhood || "");
+    const neighbourhoodList = Array.isArray(d.photoNeighbourhoods)
+      ? d.photoNeighbourhoods
+      : Array.isArray(p?.neighbourhoods)
+      ? p.neighbourhoods
+      : [];
+    setPhotoNeighbourhoodsInput(neighbourhoodList.join("\n"));
+    setPhotoRandomizeCoords(!!d.photoRandomizeCoords);
+    setPhotoRandomizeRadius(
+      d.photoRandomizeRadius != null ? d.photoRandomizeRadius : 200
+    );
     setPhotoKeywords(d.photoKeywords || "");
     setPhotoCategories(d.photoCategories || "");
+    setNeighbourhoodResults([]);
+    mapBoundsRef.current = null;
+    setMapBounds(null);
     if (selectedId) refreshHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedProfile?.defaults]);
@@ -606,11 +927,85 @@ export default function App() {
   }, [selectedId]);
 
   useEffect(() => {
+    refreshPhotoMetaSample();
+    refreshGeoSamples();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedProfile,
+    photoLat,
+    photoLng,
+    photoCity,
+    photoNeighbourhood,
+    photoNeighbourhoodsInput,
+    photoRandomizeCoords,
+    photoRandomizeRadius,
+    photoKeywords,
+    photoCategories,
+    linkUrl
+  ]);
+
+  // Build a preview meta list for all selected photos so the user can see coords/neighbourhoods
+  useEffect(() => {
+    const list = photoSchedMediaList.length
+      ? photoSchedMediaList
+      : photoSchedMedia
+      ? [photoSchedMedia]
+      : [];
+    const previews = list.slice(0, 100).map((media) => {
+      const meta = buildPhotoMeta();
+      const caption = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+      return { media, meta, caption };
+    });
+    setPhotoSelectionPreview(previews);
+  }, [
+    photoSchedMediaList,
+    photoSchedMedia,
+    photoSchedCaption,
+    photoCity,
+    photoNeighbourhood,
+    photoNeighbourhoodsInput,
+    photoRandomizeCoords,
+    photoRandomizeRadius,
+    photoKeywords,
+    photoCategories,
+    selectedProfile
+  ]);
+
+  useEffect(() => {
     if (tab === "photo-scheduler") {
       loadPhotoJobs();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, selectedId]);
+
+  useEffect(() => {
+    if (cityLookupTimer.current) clearTimeout(cityLookupTimer.current);
+    const city = String(photoCity || "").trim();
+    if (!city || city.length < 3) return;
+    cityLookupTimer.current = setTimeout(() => {
+      generateNeighbourhoods(city);
+    }, 600);
+    return () => {
+      if (cityLookupTimer.current) clearTimeout(cityLookupTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoCity]);
+
+  useEffect(() => {
+    if (photoLat || photoLng) return;
+    const firstWithCoords = neighbourhoodResults.find(
+      (n) => n.lat != null && n.lng != null
+    );
+    if (firstWithCoords) {
+      setPhotoLat(String(firstWithCoords.lat));
+      setPhotoLng(String(firstWithCoords.lng));
+      setPhotoRandomizeCoords(true);
+      const b = computeMapBounds(firstWithCoords.lat, firstWithCoords.lng, 2000);
+      mapBoundsRef.current = b;
+      setMapBounds(b);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [neighbourhoodResults]);
 
   useEffect(() => {
     if (!bulkDrafts.length) {
@@ -708,21 +1103,360 @@ export default function App() {
 
   function buildPhotoMeta() {
     const profile = selectedProfile || {};
-    const city = profile.city || "";
+    const city = photoCity || profile.city || "";
+    const candidates =
+      neighbourhoodOptionsDetailed.length > 0
+        ? neighbourhoodOptionsDetailed
+        : parseNeighbourhoodInput(photoNeighbourhoodsInput).map((name) => ({ name }));
+    const chosen =
+      candidates.length > 0
+        ? candidates[Math.floor(Math.random() * candidates.length)]
+        : null;
+    const chosenDetailed =
+      photoNeighbourhood && neighbourhoodOptionsDetailed.length
+        ? neighbourhoodOptionsDetailed.find(
+            (n) =>
+              String(n.name || "").trim().toLowerCase() ===
+              String(photoNeighbourhood || "").trim().toLowerCase()
+          )
+        : null;
+    const neighbourhood =
+      (chosen && chosen.name) ||
+      photoNeighbourhood ||
+      (Array.isArray(profile.neighbourhoods) ? profile.neighbourhoods[0] : "") ||
+      "";
+    const baseLat =
+      (chosenDetailed && chosenDetailed.lat != null && chosenDetailed.lat) ||
+      (chosen && chosen.lat != null && chosen.lng != null && !photoLat && !photoLng
+        ? chosen.lat
+        : photoLat || cityCenterRef.current.lat || "");
+    const baseLng =
+      (chosenDetailed && chosenDetailed.lng != null && chosenDetailed.lng) ||
+      (chosen && chosen.lat != null && chosen.lng != null && !photoLng && !photoLat
+        ? chosen.lng
+        : photoLng || cityCenterRef.current.lng || "");
+    const coords =
+      photoRandomizeCoords && baseLat && baseLng
+      ? randomizeCoords(baseLat, baseLng, photoRandomizeRadius)
+      : { lat: baseLat, lng: baseLng };
+
+    const serviceList = String(photoKeywords || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const categoryList = String(photoCategories || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const chosenService =
+      photoRandomizeKeywords && serviceList.length
+        ? serviceList[Math.floor(Math.random() * serviceList.length)]
+        : photoKeywords;
+    const chosenCategory =
+      photoRandomizeKeywords && categoryList.length
+        ? categoryList[Math.floor(Math.random() * categoryList.length)]
+        : photoCategories;
+
     return {
-      lat: photoLat || "",
-      lng: photoLng || "",
+      lat: coords.lat || "",
+      lng: coords.lng || "",
       city,
-      neighbourhood:
-        photoNeighbourhood ||
-        (Array.isArray(profile.neighbourhoods) ? profile.neighbourhoods[0] : "") ||
-        "",
+      neighbourhood,
       serviceKeywords:
-        photoKeywords || (Array.isArray(profile.keywords) ? profile.keywords.join(", ") : ""),
-      categoryKeywords: photoCategories || "",
+        chosenService || (Array.isArray(profile.keywords) ? profile.keywords.join(", ") : ""),
+      categoryKeywords: chosenCategory || "",
       businessName: profile.businessName || "",
       website: profile.landingUrl || profile.defaults?.linkUrl || linkUrl || "",
+      seoSlug: [city, neighbourhood, photoKeywords, photoCategories]
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .join(" | "),
     };
+  }
+
+  function shufflePhotoLocation() {
+    const list = parseNeighbourhoodInput(photoNeighbourhoodsInput);
+    if (list.length) {
+      setPhotoNeighbourhood(randomNeighbourhood(list, photoNeighbourhood));
+    }
+    const radius = Number(photoRandomizeRadius) || 0;
+    if (photoLat && photoLng && radius > 0) {
+      const coords = randomizeCoords(photoLat, photoLng, radius);
+      if (coords.lat) setPhotoLat(String(coords.lat));
+      if (coords.lng) setPhotoLng(String(coords.lng));
+    } else if (!photoLat || !photoLng) {
+      notify("Set base latitude/longitude to shuffle coordinates.");
+    }
+  }
+
+  function refreshPhotoMetaSample() {
+    const meta = buildPhotoMeta();
+    setPhotoMetaSample(meta);
+    logGeo("Sample meta refreshed", meta);
+  }
+
+  function refreshGeoSamples(count = 3) {
+    const samples = [];
+    for (let i = 0; i < count; i++) {
+      samples.push(buildPhotoMeta());
+    }
+    setGeoTestSamples(samples);
+    if (samples[0]) setPhotoMetaSample(samples[0]);
+    logGeo("Jitter preview refreshed", samples);
+  }
+
+  async function generateNeighbourhoods(city) {
+    const q = String(city || "").trim();
+    if (!q) return;
+    setNeighbourhoodsLoading(true);
+    try {
+      const baseLatNum = parseFloat(photoLat);
+      const baseLngNum = parseFloat(photoLng);
+      const hasBaseCoords = !isNaN(baseLatNum) && !isNaN(baseLngNum);
+      const targetCityNorm = normalizeCityName(q);
+      logGeo("Neighbourhood lookup start", {
+        city: q,
+        lat: hasBaseCoords ? baseLatNum : null,
+        lng: hasBaseCoords ? baseLngNum : null
+      });
+      const url =
+        "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&extratags=1&q=" +
+        encodeURIComponent(q);
+      const res = await fetch(url, {
+        headers: {
+          "Accept-Language": "en",
+          "User-Agent": "gmb-automation/1.0"
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Lookup failed (${res.status})`);
+      }
+      const data = await res.json();
+      // Find a city center from the first result that matches the city name
+      const cityHit = data.find((item) => {
+        const addr = item?.address || {};
+        const cityCandidates = [
+          addr.city,
+          addr.town,
+          addr.village,
+          addr.hamlet,
+          addr.municipality,
+          addr.county,
+          addr.state
+        ]
+          .map(normalizeCityName)
+          .filter(Boolean);
+        return cityCandidates.includes(targetCityNorm);
+      });
+      const cityCenter = cityHit && cityHit.lat && cityHit.lon
+        ? { lat: parseFloat(cityHit.lat), lng: parseFloat(cityHit.lon) }
+        : { lat: null, lng: null };
+      const radiusMeters = Math.max(1000, Number(photoSearchRadius || 20) * 1000);
+      if (!hasBaseCoords && cityCenter.lat != null && cityCenter.lng != null) {
+        setPhotoLat(String(cityCenter.lat));
+        setPhotoLng(String(cityCenter.lng));
+        cityCenterRef.current = cityCenter;
+        const b = computeMapBounds(cityCenter.lat, cityCenter.lng, radiusMeters);
+        mapBoundsRef.current = b;
+        setMapBounds(b);
+      } else if (hasBaseCoords) {
+        cityCenterRef.current = { lat: baseLatNum, lng: baseLngNum };
+        const b = computeMapBounds(baseLatNum, baseLngNum, radiusMeters);
+        mapBoundsRef.current = b;
+        setMapBounds(b);
+      } else {
+        cityCenterRef.current = { lat: null, lng: null };
+      }
+
+      const byName = new Map();
+      const addName = (s, lat, lng) => {
+        const v = String(s || "").trim();
+        if (!v) return;
+        if (!byName.has(v)) {
+          byName.set(v, {
+            name: v,
+            lat: isNaN(lat) ? null : +lat,
+            lng: isNaN(lng) ? null : +lng
+          });
+        }
+      };
+      data.forEach((item) => {
+        const addr = item?.address || {};
+        const entryLat = parseFloat(item.lat);
+        const entryLng = parseFloat(item.lon);
+        const cityCandidates = [
+          addr.city,
+          addr.town,
+          addr.village,
+          addr.hamlet,
+          addr.municipality,
+          addr.county,
+          addr.state
+        ]
+          .map(normalizeCityName)
+          .filter(Boolean);
+        const cityMatch = targetCityNorm
+          ? cityCandidates.some(
+              (c) => c === targetCityNorm || c.includes(targetCityNorm)
+            )
+          : true;
+        const centerLat = hasBaseCoords ? baseLatNum : cityCenterRef.current.lat;
+        const centerLng = hasBaseCoords ? baseLngNum : cityCenterRef.current.lng;
+        const centerReady = !isNaN(centerLat) && !isNaN(centerLng);
+        const withinRadius =
+          centerReady && !isNaN(entryLat) && !isNaN(entryLng)
+            ? haversineKm(centerLat, centerLng, entryLat, entryLng) <= Math.max(5, Number(photoSearchRadius || 20))
+            : false;
+        // Keep only if city matches, or (city not matched but within radius of a known center)
+        if (!cityMatch && !withinRadius) return;
+        [
+          addr.neighbourhood,
+          addr.suburb,
+          addr.city_district,
+          addr.quarter,
+          addr.village,
+          addr.town,
+          addr.hamlet,
+          addr.road,
+          addr.pedestrian,
+          addr.industrial,
+          addr.commercial
+        ]
+          .forEach((n) => addName(n, entryLat, entryLng));
+      });
+      let list = Array.from(byName.values());
+      if (cityCenterRef.current.lat != null && cityCenterRef.current.lng != null) {
+        list = list
+          .map((it) => {
+            if (it.lat == null || it.lng == null) {
+              return { ...it, lat: cityCenterRef.current.lat, lng: cityCenterRef.current.lng };
+            }
+            return it;
+          })
+          .slice(0, 25);
+      }
+      if (q && !byName.has(q)) {
+        list.unshift({
+          name: q,
+          lat:
+            cityCenterRef.current.lat != null ? cityCenterRef.current.lat : hasBaseCoords ? baseLatNum : null,
+          lng:
+            cityCenterRef.current.lng != null ? cityCenterRef.current.lng : hasBaseCoords ? baseLngNum : null
+        });
+      }
+      if (!list.length) {
+        throw new Error("No neighbourhoods found for this city/coords. Try another city or add manually.");
+      }
+      // Fallback: bounded search around city center if too few results
+      if (list.length < 5 && cityCenterRef.current.lat != null && cityCenterRef.current.lng != null) {
+        try {
+          const lat = cityCenterRef.current.lat;
+          const lng = cityCenterRef.current.lng;
+          const delta = 0.2; // ~20km
+          const viewbox = [
+            lng - delta,
+            lat + delta,
+            lng + delta,
+            lat - delta
+          ].join(",");
+          const boundedUrl =
+            "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&extratags=1&bounded=1&viewbox=" +
+            viewbox +
+            "&q=" +
+            encodeURIComponent(q + " neighbourhood");
+          const boundedRes = await fetch(boundedUrl, {
+            headers: {
+              "Accept-Language": "en",
+              "User-Agent": "gmb-automation/1.0"
+            }
+          });
+          if (boundedRes.ok) {
+            const boundedData = await boundedRes.json();
+            boundedData.forEach((item) => {
+              const addr = item?.address || {};
+              const entryLat = parseFloat(item.lat);
+              const entryLng = parseFloat(item.lon);
+              [
+                addr.neighbourhood,
+                addr.suburb,
+                addr.city_district,
+                addr.quarter,
+                addr.village,
+                addr.town,
+                addr.hamlet,
+                addr.road,
+                addr.pedestrian,
+                addr.industrial,
+                addr.commercial
+              ].forEach((n) => addName(n, entryLat, entryLng));
+            });
+            list = Array.from(byName.values());
+          }
+        } catch (fallbackErr) {
+          console.warn("bounded lookup failed", fallbackErr);
+        }
+      }
+      // Overpass enrichment to pick up more neighbourhoods/streets
+      try {
+        const radiusMeters = Math.max(1000, Number(photoSearchRadius || 20) * 1000);
+        const overpassList = await fetchOverpassPlaces(
+          q,
+          cityCenterRef.current.lat != null ? cityCenterRef.current.lat : baseLatNum,
+          cityCenterRef.current.lng != null ? cityCenterRef.current.lng : baseLngNum,
+          radiusMeters
+        );
+        overpassList.forEach((item) => {
+          if (!byName.has(item.name)) {
+            byName.set(item.name, item);
+          }
+        });
+        list = Array.from(byName.values());
+      } catch (overErr) {
+        console.warn("Overpass enrichment failed", overErr);
+      }
+      list = Array.from(byName.values());
+      setNeighbourhoodResults(list);
+      setPhotoNeighbourhoodsInput(list.map((i) => i.name).join("\n"));
+      notify(`Loaded ${list.length} areas from maps`);
+      logGeo("Neighbourhood lookup success", {
+        count: list.length,
+        sample: list.slice(0, 5),
+        city: q,
+        baseLat: hasBaseCoords ? baseLatNum : cityCenterRef.current.lat,
+        baseLng: hasBaseCoords ? baseLngNum : cityCenterRef.current.lng,
+        radiusKm: photoSearchRadius
+      });
+      refreshPhotoMetaSample();
+      refreshGeoSamples();
+    } catch (e) {
+      notify(e.message || "Neighbourhood lookup failed");
+      logGeo("Neighbourhood lookup failed", { error: e.message || String(e) });
+    } finally {
+      setNeighbourhoodsLoading(false);
+    }
+  }
+
+  async function savePhotoMetaDefaults() {
+    if (!selectedProfile) return notify("Select a profile first");
+    setSavingPhotoMeta(true);
+    try {
+      await api.updateProfileDefaults(selectedProfile.profileId, {
+        photoCityOverride: String(photoCity || "").trim(),
+        photoLat: String(photoLat || "").trim(),
+        photoLng: String(photoLng || "").trim(),
+        photoNeighbourhood: String(photoNeighbourhood || "").trim(),
+        photoNeighbourhoods: photoNeighbourhoodOptions,
+        photoRandomizeCoords,
+        photoRandomizeRadius,
+        photoKeywords: String(photoKeywords || "").trim(),
+        photoCategories: String(photoCategories || "").trim(),
+      });
+      notify("Photo EXIF defaults saved");
+    } catch (e) {
+      notify(e.message || "Save failed");
+    } finally {
+      setSavingPhotoMeta(false);
+    }
   }
 
   function validateBeforePost(effectiveLink) {
@@ -872,13 +1606,16 @@ export default function App() {
   async function loadPhotoJobs() {
     setPhotoJobsLoading(true);
     try {
-      const res = await api.getScheduledPhotos();
+      const res = await api.getScheduledPhotos(true);
       const items = Array.isArray(res?.items) ? res.items : [];
       const filtered = selectedId
         ? items.filter((it) => it.profileId === selectedId)
         : items;
       filtered.sort((a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime());
-      setPhotoJobs(filtered);
+      const queued = filtered.filter((it) => (it.status || "QUEUED") === "QUEUED");
+      const history = filtered.filter((it) => (it.status || "QUEUED") !== "QUEUED");
+      setPhotoJobs(queued);
+      setPhotoJobsHistory(history);
     } catch (e) {
       notify(e.message || "Failed to load photo schedules");
     } finally {
@@ -888,11 +1625,14 @@ export default function App() {
 
   async function schedulePhotosBulk() {
     if (!selectedId) return notify("Select a profile first");
-    const mediaList = photoSchedMediaList.length
+    const mediaListRaw = photoSchedMediaList.length
       ? photoSchedMediaList
       : photoSchedMedia
       ? [photoSchedMedia]
       : [];
+    const mediaList = Array.from(
+      new Set(mediaListRaw.map((m) => String(m || "").trim()).filter(Boolean))
+    );
     if (!mediaList.length) return notify("Pick at least one photo for scheduling");
     const baseDt = new Date(`${photoSchedDate}T${photoSchedTime || "00:00"}:00`);
     if (isNaN(baseDt.getTime())) return notify("Set a valid start date/time");
@@ -903,17 +1643,22 @@ export default function App() {
     const requestedCount = Math.max(1, Math.min(100, parseInt(photoSchedCount, 10) || mediaList.length || 1));
     const dayStep = photoSchedCadence === "DAILY2" ? 2 : photoSchedCadence === "DAILY3" ? 3 : 1;
     const items = [];
+    setPhotoSchedulerStatus("stamping");
     for (let i = 0; i < requestedCount; i++) {
+      const meta = buildPhotoMeta(); // build fresh meta per photo for randomized GPS/neighbourhood
       const runAt = new Date(baseDt.getTime() + i * dayStep * 86400000).toISOString();
-      const mediaUrl = mediaList[i % mediaList.length];
+      meta.dateTime = runAt;
+      const captionText = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+      const mediaRaw = mediaList[i % mediaList.length];
+      const mediaUrl = await ensurePhotoHasMeta(mediaRaw, meta);
       items.push({
         id: makeId(),
         profileId: selectedId,
         runAt,
         body: {
           mediaUrl,
-          caption: photoSchedCaption || "",
-          meta: buildPhotoMeta(),
+          caption: captionText,
+          meta,
         },
         status: "QUEUED",
       });
@@ -932,6 +1677,77 @@ export default function App() {
     }
   }
 
+  async function updateSelectedPhotoJob() {
+    if (!editingPhotoJobId) return notify("Pick a scheduled photo from the calendar first.");
+    if (!selectedId) return notify("Select a profile first");
+    const mediaUrlRaw =
+      photoSchedMediaList.length > 0
+        ? photoSchedMediaList[0]
+        : photoSchedMedia
+        ? photoSchedMedia
+        : "";
+    if (!mediaUrlRaw) return notify("Pick a photo first");
+    const when = new Date(`${photoSchedDate}T${photoSchedTime || "00:00"}:00`);
+    if (isNaN(when.getTime())) return notify("Set a valid date/time");
+    const meta = buildPhotoMeta();
+    meta.dateTime = when.toISOString();
+    const stampedUrl = await ensurePhotoHasMeta(mediaUrlRaw, meta);
+    const item = {
+      profileId: selectedId,
+      runAt: when.toISOString(),
+      body: {
+        mediaUrl: stampedUrl || mediaUrlRaw,
+        caption: photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords),
+        meta,
+      },
+    };
+    try {
+      setPhotoSchedulerStatus("saving");
+      await api.deleteScheduledPhoto(editingPhotoJobId);
+      await api.createScheduledPhoto(item);
+      setEditingPhotoJobId("");
+      notify("Scheduled photo updated");
+      await loadPhotoJobs();
+      setPhotoSchedulerStatus("saved");
+    } catch (e) {
+      notify(e.message || "Update failed");
+      setPhotoSchedulerStatus("error");
+    } finally {
+      setTimeout(() => setPhotoSchedulerStatus(""), 2000);
+    }
+  }
+
+  async function postPhotoNow() {
+    if (!selectedId) return notify("Select a profile first");
+    const mediaUrlRaw =
+      photoSchedMediaList.length > 0
+        ? photoSchedMediaList[0]
+        : photoSchedMedia
+        ? photoSchedMedia
+        : "";
+    if (!mediaUrlRaw) return notify("Pick a photo first");
+    const meta = buildPhotoMeta();
+    meta.dateTime = new Date().toISOString();
+    const stampedUrl = await ensurePhotoHasMeta(mediaUrlRaw, meta);
+    const captionText = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+    try {
+      setPhotoSchedulerStatus("posting");
+      await api.postPhotoNow({
+        profileId: selectedId,
+        mediaUrl: stampedUrl || mediaUrlRaw,
+        caption: captionText
+      });
+      notify("Photo posted to GBP library");
+      setPhotoSchedulerStatus("posted");
+      await loadPhotoJobs();
+    } catch (e) {
+      notify(e.message || "Post failed");
+      setPhotoSchedulerStatus("error");
+    } finally {
+      setTimeout(() => setPhotoSchedulerStatus(""), 2000);
+    }
+  }
+
   async function deletePhotoJob(id) {
     if (!id) return;
     try {
@@ -940,6 +1756,54 @@ export default function App() {
       await loadPhotoJobs();
     } catch (e) {
       notify(e.message || "Delete failed");
+    }
+  }
+
+  async function fetchLatestPhotos() {
+    if (!selectedId) return notify("Select a profile first");
+    setLatestPhotosLoading(true);
+    try {
+      const res = await api.getLatestPhotos(selectedId, 10);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      setLatestPhotos(items);
+      notify(items.length ? "Fetched latest GBP photos" : "No photos returned from GBP");
+    } catch (e) {
+      notify(e.message || "Failed to load GBP photos");
+    } finally {
+      setLatestPhotosLoading(false);
+    }
+  }
+
+  async function fetchLatestPhotosDebug() {
+    if (!selectedId) return notify("Select a profile first");
+    setLatestPhotosDebugLoading(true);
+    try {
+      const res = await api.getLatestPhotosDebug(selectedId, 20, 5);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      setLatestPhotosDebug(items);
+      notify(items.length ? "Fetched GBP photos (debug, multi-page)" : "No photos returned from GBP");
+    } catch (e) {
+      notify(e.message || "Failed to load GBP photos (debug)");
+    } finally {
+      setLatestPhotosDebugLoading(false);
+    }
+  }
+
+  async function ensurePhotoHasMeta(url, metaOverride = null) {
+    const meta = metaOverride || buildPhotoMeta();
+    try {
+      const fullUrl = resolveMediaPreviewUrl(url, backendBase);
+      const resp = await fetch(fullUrl);
+      if (!resp.ok) throw new Error(`Fetch failed (${resp.status})`);
+      const blob = await resp.blob();
+      const filename = (url.split("/").pop() || "photo.jpg").split("?")[0];
+      const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
+      const res = await uploadPhoto(file, backendBase, meta);
+      return res?.url || url;
+    } catch (e) {
+      console.warn("ensurePhotoHasMeta failed", e);
+      notify(e.message || "Failed to stamp EXIF; using original photo");
+      return url;
     }
   }
 
@@ -1306,11 +2170,6 @@ export default function App() {
         reviewLink: String(reviewLink || "").trim(),
         serviceAreaLink: String(serviceAreaLink || "").trim(),
         areaMapLink: String(areaMapLink || "").trim(),
-        photoLat: String(photoLat || "").trim(),
-        photoLng: String(photoLng || "").trim(),
-        photoNeighbourhood: String(photoNeighbourhood || "").trim(),
-        photoKeywords: String(photoKeywords || "").trim(),
-        photoCategories: String(photoCategories || "").trim(),
       });
       notify("Defaults saved");
       const pr = await api.getProfiles();
@@ -1331,7 +2190,7 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const result = await uploadPhoto(file, backendBase, buildPhotoMeta());
+      const result = await uploadPhoto(file, backendBase, null);
       if (result && result.url) {
         setMediaUrl(result.url);
         notify("Photo uploaded from your computer.");
@@ -1347,8 +2206,8 @@ export default function App() {
   }
 
   async function handleBulkPhotoUpload(e) {
-    const file = e?.target?.files?.[0];
-    if (!file) return;
+    const files = Array.from(e?.target?.files || []);
+    if (!files.length) return;
     if (!backendBase) {
       notify("Backend not ready yet. Try again in a moment.");
       if (e?.target) e.target.value = "";
@@ -1356,14 +2215,46 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const result = await uploadPhoto(file, backendBase, buildPhotoMeta());
-      if (result && result.url) {
-        setBulkImages((prev) => [...prev, result.url].slice(-50));
-        if (!mediaUrl) setMediaUrl(result.url);
+      const { urls = [], failed = [] } = await uploadPhotos(files, backendBase, null);
+      if (urls.length) {
+        setBulkImages((prev) => [...prev, ...urls].slice(-50));
+        if (!mediaUrl) setMediaUrl(urls[0]);
         if (activeDraftIndex >= 0) {
-          updateBulkDraftBody(activeDraftIndex, { mediaUrl: result.url });
+          updateBulkDraftBody(activeDraftIndex, { mediaUrl: urls[0] });
         }
-        notify("Photo uploaded and added to bulk selection.");
+        notify(
+          `Uploaded ${urls.length} photo(s) and added to bulk selection.` +
+            (failed.length ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+        );
+      } else {
+        notify("Upload succeeded but no URL was returned.");
+      }
+    } catch (err) {
+      notify(err.message || "Upload failed");
+    } finally {
+      setUploadingPhoto(false);
+      if (e?.target) e.target.value = "";
+    }
+  }
+
+  async function handleSchedulerPhotoUpload(e) {
+    const files = Array.from(e?.target?.files || []);
+    if (!files.length) return;
+    if (!backendBase) {
+      notify("Backend not ready yet. Try again in a moment.");
+      if (e?.target) e.target.value = "";
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const { urls = [], failed = [] } = await uploadPhotos(files, backendBase, buildPhotoMeta());
+      if (urls.length) {
+        setPhotoSchedMedia(urls[0]);
+        setPhotoSchedMediaList((prev) => [...urls, ...prev].slice(0, 100));
+        notify(
+          `Uploaded ${urls.length} photo(s) with EXIF geo for scheduler.` +
+            (failed.length ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+        );
       } else {
         notify("Upload succeeded but no URL was returned.");
       }
@@ -1802,58 +2693,9 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  <div className="panel-subsection">
-                    <div className="panel-subsection__header">
-                      <span className="field-label">Photo metadata defaults</span>
-                      <span className="muted small">
-                        Used to geo-tag uploaded images for this profile.
-                      </span>
-                    </div>
-                    <div className="two-col">
-                      <label className="field-label">Latitude</label>
-                      <input
-                        value={photoLat}
-                        onChange={(e) => setPhotoLat(e.target.value)}
-                        placeholder="51.0447"
-                      />
-                    </div>
-                    <div className="two-col">
-                      <label className="field-label">Longitude</label>
-                      <input
-                        value={photoLng}
-                        onChange={(e) => setPhotoLng(e.target.value)}
-                        placeholder="-114.0719"
-                      />
-                    </div>
-                    <div className="two-col">
-                      <label className="field-label">Neighbourhood (for EXIF)</label>
-                      <input
-                        value={photoNeighbourhood}
-                        onChange={(e) => setPhotoNeighbourhood(e.target.value)}
-                        placeholder="Kensington"
-                      />
-                    </div>
-                    <div className="two-col">
-                      <label className="field-label">Service keywords</label>
-                      <input
-                        value={photoKeywords}
-                        onChange={(e) => setPhotoKeywords(e.target.value)}
-                        placeholder="popcorn ceiling removal, drywall repair"
-                      />
-                    </div>
-                    <div className="two-col">
-                      <label className="field-label">Category keywords</label>
-                      <input
-                        value={photoCategories}
-                        onChange={(e) => setPhotoCategories(e.target.value)}
-                        placeholder="painting contractor, drywall finishing"
-                      />
-                    </div>
-                    <p className="muted small">
-                      When you upload via gallery or photo fields, JPEGs will be stamped with GPS + these keywords,
-                      plus the profile business name and website.
-                    </p>
-                  </div>
+                  <p className="muted small">
+                    EXIF geo settings now live in Photo scheduler → Photo metadata. Regular posts don’t need geo tagging.
+                  </p>
                 </div>
                 <div className="panel-section">
                   <label className="field-label">Photo URL</label>
@@ -1879,6 +2721,7 @@ export default function App() {
                         if (!uploadsInfo) {
                           await loadUploadsInfo();
                         }
+                        setMediaGalleryContext("profile");
                         setMediaGalleryOpen(true);
                       }}
                       disabled={!backendBase}
@@ -2396,6 +3239,16 @@ export default function App() {
                     You can add up to 100 photos: pick multiple in the gallery or paste them below.
                   </p>
                   <div className="action-row">
+              <label className="btn btn--ghost btn--small upload-btn">
+                Upload with EXIF
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleSchedulerPhotoUpload}
+                  disabled={uploadingPhoto || !backendBase}
+                />
+              </label>
                     <button
                       className="btn btn--ghost btn--small"
                       type="button"
@@ -2436,7 +3289,13 @@ export default function App() {
                     <button
                       className="btn btn--ghost btn--small"
                       type="button"
-                      onClick={() => setMediaGalleryOpen(true)}
+                      onClick={async () => {
+                        if (!uploadsInfo) {
+                          await loadUploadsInfo();
+                        }
+                        setMediaGalleryContext("photo-scheduler");
+                        setMediaGalleryOpen(true);
+                      }}
                     >
                       Browse gallery
                     </button>
@@ -2453,11 +3312,383 @@ export default function App() {
                     placeholder="Optional text to accompany the photo"
                   />
                 </div>
-                <div className="panel-section two-col">
-                  <label className="field-label">Start date</label>
-                  <input
-                    type="date"
-                    value={photoSchedDate}
+                <div className="panel-section">
+                  <div className="panel-subsection__header">
+                    <span className="field-label">Photo metadata (used for EXIF & scheduling)</span>
+                    <span className="muted small">
+                      Auto-randomizes neighbourhood + coordinates per photo if enabled below.
+                    </span>
+                  </div>
+                  <div className="section-grid">
+                    <div className="section">
+                      <label className="field-label">City (override)</label>
+                      <input
+                        value={photoCity}
+                        onChange={(e) => setPhotoCity(e.target.value)}
+                        placeholder={selectedProfile?.city || "Calgary"}
+                      />
+                    </div>
+                    <div className="section">
+                      <label className="field-label">Latitude</label>
+                      <input
+                        value={photoLat}
+                        onChange={(e) => setPhotoLat(e.target.value)}
+                        placeholder="51.0447"
+                      />
+                    </div>
+                    <div className="section">
+                      <label className="field-label">Longitude</label>
+                      <input
+                        value={photoLng}
+                        onChange={(e) => setPhotoLng(e.target.value)}
+                        placeholder="-114.0719"
+                      />
+                    </div>
+                  </div>
+                  <div className="section-grid">
+                    <div className="section">
+                      <label className="field-label">Neighbourhood (fallback)</label>
+                      <input
+                        value={photoNeighbourhood}
+                        onChange={(e) => setPhotoNeighbourhood(e.target.value)}
+                        placeholder="Kensington"
+                      />
+                    </div>
+                    <div className="section">
+                      <label className="field-label">Neighbourhood list (random pick)</label>
+                      <textarea
+                        value={photoNeighbourhoodsInput}
+                        onChange={(e) => setPhotoNeighbourhoodsInput(e.target.value)}
+                        placeholder="Kensington\nMount Pleasant\nDowntown"
+                        rows={3}
+                      />
+                      <div className="action-row" style={{ marginTop: 4 }}>
+                        <button
+                          className="btn btn--ghost btn--small"
+                          type="button"
+                          onClick={() => {
+                            const city = photoCity || selectedProfile?.city || "";
+                            if (!city) {
+                              notify("Set a city first.");
+                              return;
+                            }
+                            generateNeighbourhoods(city);
+                          }}
+                        >
+                          {neighbourhoodsLoading ? "Loading..." : "Generate from map"}
+                        </button>
+                        <span className="muted small">
+                          Pulls neighbourhoods/streets near the city and your lat/lng (30km filter).
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="section-grid">
+                    <div className="section">
+                      <label className="field-label">Service keywords</label>
+                      <input
+                        value={photoKeywords}
+                        onChange={(e) => setPhotoKeywords(e.target.value)}
+                        placeholder="popcorn ceiling removal, drywall repair"
+                      />
+                    </div>
+                    <div className="section">
+                      <label className="field-label">Category keywords</label>
+                      <input
+                        value={photoCategories}
+                        onChange={(e) => setPhotoCategories(e.target.value)}
+                        placeholder="painting contractor, drywall finishing"
+                      />
+                      <label className="checkbox-inline" style={{ marginTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={photoRandomizeKeywords}
+                          onChange={(e) => setPhotoRandomizeKeywords(e.target.checked)}
+                        />
+                        Randomize keywords per photo
+                      </label>
+                    </div>
+                    <div className="section">
+                      <label className="field-label">Jitter radius (meters)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={photoRandomizeRadius}
+                        onChange={(e) => setPhotoRandomizeRadius(Number(e.target.value))}
+                        placeholder="200"
+                      />
+                      <label className="checkbox-inline" style={{ marginTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={photoRandomizeCoords}
+                          onChange={(e) => setPhotoRandomizeCoords(e.target.checked)}
+                        />
+                        Auto-randomize coordinates
+                      </label>
+                      <label className="field-label" style={{ marginTop: 10 }}>
+                        Neighbourhood search radius (km)
+                      </label>
+                      <input
+                        type="number"
+                        min="5"
+                        max="50"
+                        value={photoSearchRadius}
+                        onChange={(e) => setPhotoSearchRadius(Number(e.target.value) || 20)}
+                        placeholder="20"
+                      />
+                      <div className="muted small">
+                        Higher radius pulls more GTA areas; lower radius keeps it local.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="section-grid" style={{ alignItems: "start" }}>
+                    <div>
+                      <div className="muted small">City</div>
+                      <strong>{photoMetaSample?.city || photoCity || selectedProfile?.city || "—"}</strong>
+                    </div>
+                    <div>
+                      <div className="muted small">Neighbourhood (next)</div>
+                      <strong>
+                        {photoMetaSample?.neighbourhood ||
+                          photoNeighbourhood ||
+                          (photoNeighbourhoodOptions[0] || "—")}
+                      </strong>
+                    </div>
+                    <div>
+                      <div className="muted small">Base coords</div>
+                      <strong>
+                        {(photoLat || "—") + ", " + (photoLng || "—")}
+                      </strong>
+                      <div className="muted small">
+                        {photoRandomizeCoords
+                          ? `Jitter on (${photoRandomizeRadius}m)`
+                          : "Jitter off"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="muted small">GPS (next)</div>
+                      <strong>
+                        {photoMetaSample
+                          ? `${photoMetaSample.lat || "—"}, ${photoMetaSample.lng || "—"}`
+                          : "—"}
+                      </strong>
+                    </div>
+                    <div>
+                      <div className="muted small">Neighbourhood pool</div>
+                      <div className="muted small" style={{ maxWidth: 220 }}>
+                        {neighbourhoodOptionsDetailed.length
+                          ? neighbourhoodOptionsDetailed.map((n) => n.name).join(", ")
+                          : "None set. Using fallback above."}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="section-grid">
+                    <div className="section">
+                      <label className="field-label">Pick neighbourhood (sets coords)</label>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (!v) return;
+                          const found = neighbourhoodOptionsDetailed.find((n) => n.name === v);
+                          setPhotoNeighbourhood(v);
+                          if (found && found.lat != null && found.lng != null) {
+                            setPhotoLat(String(found.lat));
+                            setPhotoLng(String(found.lng));
+                            setPhotoRandomizeCoords(true);
+                            logGeo("Neighbourhood selected", found);
+                          } else {
+                            logGeo("Neighbourhood selected (no coords)", { name: v });
+                          }
+                          refreshPhotoMetaSample();
+                        }}
+                      >
+                        <option value="">Select...</option>
+                        {neighbourhoodOptionsDetailed.map((opt, idx) => (
+                          <option key={idx} value={opt.name}>
+                            {opt.name}
+                            {opt.lat != null && opt.lng != null
+                              ? ` (${opt.lat.toFixed(4)}, ${opt.lng.toFixed(4)})`
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="muted small">
+                        Selecting applies the neighbourhood and sets base coords (if present), ready for posting.
+                      </div>
+                    </div>
+                  </div>
+                  <div className="panel-subsection" style={{ marginTop: 12 }}>
+                    <div className="panel-subsection__header">
+                      <span className="field-label">Jitter preview (next 3)</span>
+                      <span className="muted small">
+                        Shows how coords and neighbourhood rotate for SEO.
+                      </span>
+                    </div>
+                    <div className="media-preview" style={{ marginBottom: 12 }}>
+                      <div
+                        className="media-preview-thumb"
+                        style={{
+                          width: "100%",
+                          maxWidth: 820,
+                          minHeight: 320,
+                          background: "#f5f5f5",
+                          border: "1px solid #e0e0e0",
+                          borderRadius: 6,
+                          overflow: "hidden",
+                          cursor: "crosshair"
+                        }}
+                        onClick={(e) => {
+                          const bounds = mapBoundsRef.current;
+                          if (!bounds) return;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const x = e.clientX - rect.left;
+                          const y = e.clientY - rect.top;
+                          const lng =
+                            bounds.west +
+                            (x / rect.width) * (bounds.east - bounds.west);
+                          const lat =
+                            bounds.north -
+                            (y / rect.height) * (bounds.north - bounds.south);
+                          setPhotoLat(lat.toFixed(6));
+                          setPhotoLng(lng.toFixed(6));
+                          setPhotoRandomizeCoords(true);
+                          refreshPhotoMetaSample();
+                          logGeo("Set coords from map click", { lat, lng });
+                        }}
+                      >
+                        {mapEmbedUrl ? (
+                          <iframe
+                            title="Map preview"
+                            src={mapEmbedUrl}
+                            style={{ width: "100%", height: 420, border: "none" }}
+                            loading="lazy"
+                          />
+                        ) : mapPreviewUrl ? (
+                          <img
+                            src={mapPreviewUrl}
+                            alt="Map preview"
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div
+                            className="muted small"
+                            style={{ padding: 20, textAlign: "center" }}
+                          >
+                            Set city and coords to see map.
+                          </div>
+                        )}
+                      </div>
+                      <div className="muted small">
+                        Map centers on the current base coords; click on the map to set lat/lng. Jitter will vary around this point.
+                      </div>
+                    </div>
+                    {geoTestSamples.length ? (
+                      <div className="muted small" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                        {geoTestSamples.map((s, idx) => (
+                          <div key={idx} className="diag-card">
+                            <div><strong>{s.city || "—"}</strong></div>
+                            <div>{s.neighbourhood || "—"}</div>
+                            <div>{s.lat || "—"}, {s.lng || "—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="muted small">No samples yet.</div>
+                    )}
+                  </div>
+                  <div className="action-row" style={{ marginTop: 8 }}>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={refreshPhotoMetaSample}
+                    >
+                      Refresh random pick
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => refreshGeoSamples(3)}
+                    >
+                      Preview jitter
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => {
+                        if (!photoLat || !photoLng) {
+                          notify("Set base lat/lng before testing jitter.");
+                          return;
+                        }
+                        const samples = [];
+                        for (let i = 0; i < 5; i++) {
+                          samples.push(randomizeCoords(photoLat, photoLng, photoRandomizeRadius));
+                        }
+                        logGeo("Jitter coords test", samples);
+                      }}
+                    >
+                      Log jitter coords
+                    </button>
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v) {
+                          setPhotoNeighbourhood(v);
+                          setPhotoRandomizeCoords(false);
+                          refreshPhotoMetaSample();
+                        }
+                      }}
+                    >
+                      <option value="">Manual neighbourhood</option>
+                      {photoNeighbourhoodOptions.map((opt, idx) => (
+                        <option key={idx} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => {
+                        if (!photoNeighbourhoodOptions.length) {
+                          notify("Add neighbourhoods above to pick randomly.");
+                          return;
+                        }
+                        setPhotoNeighbourhood(
+                          randomNeighbourhood(photoNeighbourhoodOptions, photoNeighbourhood)
+                        );
+                        refreshPhotoMetaSample();
+                      }}
+                      disabled={!photoNeighbourhoodOptions.length}
+                    >
+                      Random from list
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={shufflePhotoLocation}
+                    >
+                      Shuffle coords now
+                    </button>
+                    <button
+                      className="btn btn--indigo btn--small"
+                      type="button"
+                      onClick={savePhotoMetaDefaults}
+                      disabled={!selectedProfile || savingPhotoMeta}
+                    >
+                      {savingPhotoMeta ? "Saving..." : "Save EXIF defaults"}
+                    </button>
+                  </div>
+                  <p className="muted small">
+                    City/lat/lng, neighbourhoods, and keywords live here. Save defaults to keep them tied to the profile; scheduler will stamp EXIF automatically.
+                  </p>
+                </div>
+                  <div className="panel-section two-col">
+                    <label className="field-label">Start date</label>
+                    <input
+                      type="date"
+                      value={photoSchedDate}
                     onChange={(e) => setPhotoSchedDate(e.target.value)}
                   />
                   <label className="field-label">Start time</label>
@@ -2467,38 +3698,193 @@ export default function App() {
                     onChange={(e) => setPhotoSchedTime(e.target.value)}
                   />
                 </div>
+                <div className="panel-section diag-shell">
+                  <div className="panel-subsection__header">
+                    <span className="field-label">Geo logs (latest first)</span>
+                    <span className="muted small">Up to 30 entries; also in console with [geo].</span>
+                  </div>
+                  {geoLogs.length ? (
+                    <ul className="muted small" style={{ maxHeight: 220, overflowY: "auto" }}>
+                      {geoLogs.map((l, idx) => (
+                        <li key={idx} style={{ marginBottom: 6 }}>
+                          <div>
+                            <strong>{new Date(l.ts).toLocaleTimeString()}</strong> — {l.msg}
+                          </div>
+                          {l.data ? (
+                            <div style={{ fontSize: "0.9em", opacity: 0.8 }}>
+                              {JSON.stringify(l.data)}
+                            </div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="muted small">No geo logs yet.</div>
+                  )}
+                </div>
                 <div className="panel-section two-col">
-                  <label className="field-label">Cadence</label>
-                  <select
-                    value={photoSchedCadence}
-                    onChange={(e) => setPhotoSchedCadence(e.target.value)}
-                  >
+                    <label className="field-label">Cadence</label>
+                    <select
+                      value={photoSchedCadence}
+                      onChange={(e) => setPhotoSchedCadence(e.target.value)}
+                    >
                     <option value="DAILY1">Daily</option>
                     <option value="DAILY2">Every 2 days</option>
                     <option value="DAILY3">Every 3 days</option>
                   </select>
-                  <label className="field-label">Count</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={photoSchedCount}
-                    onChange={(e) => setPhotoSchedCount(e.target.value)}
-                  />
-                </div>
-                <div className="panel-section">
-                  <button
-                    className="btn btn--green"
-                    type="button"
-                    onClick={schedulePhotosBulk}
-                    disabled={!selectedProfile || photoSchedulerStatus === "saving"}
-                  >
-                    {photoSchedulerStatus === "saving" ? "Scheduling..." : "Schedule photos"}
-                  </button>
+                    <label className="field-label">Count</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={photoSchedCount}
+                      onChange={(e) => setPhotoSchedCount(e.target.value)}
+                    />
+                  </div>
+                  <div className="panel-section">
+                    <button
+                      className="btn btn--green"
+                      type="button"
+                      onClick={schedulePhotosBulk}
+                      disabled={!selectedProfile || schedulingBusy}
+                    >
+                      {photoSchedulerStatus === "saving" || photoSchedulerStatus === "stamping"
+                        ? "Working..."
+                        : schedulingBusy
+                        ? "Working..."
+                        : "Schedule photos"}
+                    </button>
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={postPhotoNow}
+                      disabled={!selectedProfile || schedulingBusy}
+                      style={{ marginLeft: 8 }}
+                    >
+                      {photoSchedulerStatus === "posting" ? "Posting..." : "Post photo now"}
+                    </button>
+                  {editingPhotoJobId ? (
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={updateSelectedPhotoJob}
+                      disabled={!selectedProfile || photoSchedulerStatus === "saving"}
+                      style={{ marginLeft: 8 }}
+                    >
+                      {photoSchedulerStatus === "saving" ? "Updating..." : "Update selected photo"}
+                    </button>
+                  ) : null}
                   <p className="muted small">
                     Uses the photo metadata defaults (lat/lng, neighbourhood, keywords) for EXIF stamping already embedded when the photo was uploaded.
                   </p>
                 </div>
+                {photoPreviewMedia ? (
+                  <div className="panel-section">
+                    <div className="panel-subtitle">Preview (next scheduled photo)</div>
+                    <div className="post-preview__media" style={{ maxWidth: 360 }}>
+                      <img src={photoPreviewMedia} alt="Photo preview" />
+                    </div>
+                    <div className="muted small" style={{ marginTop: 6 }}>
+                      <div><strong>Caption:</strong> {photoPreviewCaption}</div>
+                      <div>
+                        <strong>Coords:</strong> {(photoLat || "—") + ", " + (photoLng || "—")}
+                      </div>
+                      <div>
+                        <strong>Neighbourhood:</strong> {photoNeighbourhood || photoNeighbourhoodOptions[0] || "—"}
+                      </div>
+                    </div>
+                    <div className="action-row" style={{ marginTop: 8 }}>
+                      <button
+                        className="btn btn--ghost btn--small"
+                        type="button"
+                        onClick={fetchLatestPhotos}
+                        disabled={!selectedProfile || latestPhotosLoading}
+                      >
+                        {latestPhotosLoading ? "Loading GBP photos..." : "View latest GBP photos"}
+                      </button>
+                      <button
+                        className="btn btn--ghost btn--small"
+                        type="button"
+                        onClick={fetchLatestPhotosDebug}
+                        disabled={!selectedProfile || latestPhotosDebugLoading}
+                      >
+                        {latestPhotosDebugLoading ? "Diagnostics: loading..." : "Diagnostics: multi-page fetch"}
+                      </button>
+                    </div>
+                    {latestPhotos.length > 0 ? (
+                      <div className="media-strip">
+                        {latestPhotos.map((item, idx) => (
+                          <div key={item.name || idx} className="media-strip__item">
+                            <img
+                              src={(item.mediaFormat === "PHOTO" && item.sourceUrl) || item.thumbnailUrl || item.googleUrl || ""}
+                              alt={item.description || item.name || ""}
+                              style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                            <div className="muted small" style={{ marginTop: 4 }}>
+                              {item.description || "—"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {latestPhotosDebug.length > 0 ? (
+                      <div style={{ marginTop: 10 }}>
+                        <div className="muted small">Diagnostics (raw Google media, multi-page)</div>
+                        <div className="media-strip">
+                          {latestPhotosDebug.map((item, idx) => (
+                            <div key={item.name || idx} className="media-strip__item">
+                              <img
+                                src={item.googleUrl || item.thumbnailUrl || item.sourceUrl || ""}
+                                alt={item.description || item.name || ""}
+                                style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none";
+                                }}
+                              />
+                              <div className="muted small" style={{ marginTop: 4 }}>
+                                {item.description || "—"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {photoSelectionPreview.length > 1 ? (
+                    <div className="panel-section">
+                      <div className="panel-subtitle">Selected photos (with randomized coords)</div>
+                      <div className="media-strip">
+                        {photoSelectionPreview.map((item, idx) => (
+                          <div key={idx} className="media-strip__item">
+                            <img
+                              src={resolveMediaPreviewUrl(item.media, backendBase)}
+                              alt={item.meta?.neighbourhood || ""}
+                              style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                              }}
+                            />
+                            <div className="muted small" style={{ marginTop: 4 }}>
+                            {item.caption}
+                          </div>
+                          <div className="muted small">
+                            {item.meta?.neighbourhood || "—"} · {item.meta?.city || "—"}
+                          </div>
+                          <div className="muted small">
+                            {item.meta?.lat || "—"}, {item.meta?.lng || "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="muted small">
+                      Coords/neighbourhoods are randomized per photo; scheduling will use these values when stamping EXIF.
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="panel">
                 <div className="panel-title">Queued photo jobs</div>
@@ -2514,6 +3900,7 @@ export default function App() {
                           <th>When</th>
                           <th>Profile</th>
                           <th>Media</th>
+                          <th>Location</th>
                           <th>Status</th>
                           <th />
                         </tr>
@@ -2524,7 +3911,27 @@ export default function App() {
                             <td>{new Date(it.runAt).toLocaleString()}</td>
                             <td>{selectedProfile?.businessName || it.profileId}</td>
                             <td className="muted small">{it.body?.mediaUrl || "—"}</td>
-                            <td>{it.status || "QUEUED"}</td>
+                            <td className="muted small">
+                              {it.body?.meta?.city || it.body?.meta?.neighbourhood
+                                ? `${it.body?.meta?.city || ""}${
+                                    it.body?.meta?.city && it.body?.meta?.neighbourhood ? " · " : ""
+                                  }${it.body?.meta?.neighbourhood || ""}`
+                                : "—"}
+                            </td>
+                            <td className="muted small">
+                              {it.status || "QUEUED"}
+                              {it.postedAt ? (
+                                <div className="muted small">
+                                  {new Date(it.postedAt).toLocaleString()}
+                                </div>
+                              ) : null}
+                              {it.lastError ? (
+                                <div className="error-text small" title={it.lastError}>
+                                  {String(it.lastError).slice(0, 60)}
+                                  {String(it.lastError).length > 60 ? "…" : ""}
+                                </div>
+                              ) : null}
+                            </td>
                             <td>
                               <button
                                 className="btn btn--ghost btn--small"
@@ -2540,6 +3947,75 @@ export default function App() {
                     </table>
                   )}
                 </div>
+                {photoJobsHistory.length > 0 && (
+                  <div className="panel-section diag-shell">
+                    <div className="panel-subtitle">Photo history</div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Status</th>
+                          <th>Profile</th>
+                          <th>Location</th>
+                          <th>Media</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {photoJobsHistory.map((it) => (
+                          <tr key={it.id}>
+                            <td>{new Date(it.runAt).toLocaleString()}</td>
+                            <td className="muted small">
+                              {it.status || "QUEUED"}
+                              {it.postedAt ? (
+                                <div className="muted small">
+                                  {new Date(it.postedAt).toLocaleString()}
+                                </div>
+                              ) : null}
+                              {it.lastError ? (
+                                <div className="error-text small" title={it.lastError}>
+                                  {String(it.lastError).slice(0, 60)}
+                                  {String(it.lastError).length > 60 ? "…" : ""}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td>{selectedProfile?.businessName || it.profileId}</td>
+                            <td className="muted small">
+                              {it.body?.meta?.city || it.body?.meta?.neighbourhood
+                                ? `${it.body?.meta?.city || ""}${
+                                    it.body?.meta?.city && it.body?.meta?.neighbourhood ? " · " : ""
+                                  }${it.body?.meta?.neighbourhood || ""}`
+                                : "—"}
+                            </td>
+                            <td className="muted small">{it.body?.mediaUrl || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {photoJobs.length > 0 && (
+                  <div className="panel-section">
+                    <div className="panel-subtitle">Scheduled calendar</div>
+                    <PhotoScheduleCalendar
+                      jobs={photoJobs}
+                      onSelectJob={(job) => {
+                        if (!job) return;
+                        setEditingPhotoJobId(job.id);
+                        setPhotoSchedMedia(job.body?.mediaUrl || "");
+                        setPhotoSchedMediaList(job.body?.mediaUrl ? [job.body.mediaUrl] : []);
+                        setPhotoSchedCaption(job.body?.caption || "");
+                        setPhotoSchedDate(job.runAt.slice(0, 10));
+                        setPhotoSchedTime(job.runAt.slice(11, 16));
+                        const meta = job.body?.meta || {};
+                        if (meta.lat) setPhotoLat(String(meta.lat));
+                        if (meta.lng) setPhotoLng(String(meta.lng));
+                        if (meta.city) setPhotoCity(String(meta.city));
+                        if (meta.neighbourhood) setPhotoNeighbourhood(String(meta.neighbourhood));
+                        notify("Loaded scheduled photo. Adjust fields and click Update selected photo.");
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </section>
           )}
@@ -2674,6 +4150,7 @@ export default function App() {
                         if (!uploadsInfo) {
                           await loadUploadsInfo();
                         }
+                        setMediaGalleryContext("bulk");
                         setMediaGalleryOpen(true);
                       }}
                       disabled={!backendBase}
@@ -3178,7 +4655,8 @@ export default function App() {
           onClose={() => setMediaGalleryOpen(false)}
           uploadsInfo={uploadsInfo}
           backendBase={backendBase}
-          photoMeta={buildPhotoMeta()}
+          photoMeta={mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null}
+          notify={notify}
           onSelect={(value) => {
             setMediaUrl(value);
             setPhotoSchedMedia(value);

@@ -232,11 +232,18 @@ const api = {
       body: JSON.stringify({ items }),
     });
   },
-  async getScheduledPhotos() {
-    return doFetch("/photo-scheduled");
+  async getScheduledPhotos(includeAll = false) {
+    const qs = includeAll ? "?all=1" : "";
+    return doFetch(`/photo-scheduled${qs}`);
   },
   async createScheduledPhoto(payload) {
     return doFetch("/photo-scheduled", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async postPhotoNow(payload) {
+    return doFetch("/photo-now", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -251,6 +258,14 @@ const api = {
     return doFetch(`/photo-scheduled/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
+  },
+  async getLatestPhotos(profileId, limit = 10) {
+    const qs = `?profileId=${encodeURIComponent(profileId || "")}&limit=${limit}`;
+    return doFetch(`/photo-latest${qs}`);
+  },
+  async getLatestPhotosDebug(profileId, limit = 20, pages = 3) {
+    const qs = `?profileId=${encodeURIComponent(profileId || "")}&limit=${limit}&pages=${pages}`;
+    return doFetch(`/photo-latest-debug${qs}`);
   },
 };
 
@@ -289,6 +304,41 @@ export async function uploadPhoto(file, baseOverride, photoMeta = null) {
     throw new Error(`Upload failed: ${res.status} ${text}`);
   }
   return res.json();
+}
+
+export async function uploadPhotos(files, baseOverride, photoMeta = null) {
+  const base = (baseOverride || (await getApiBase())).replace(/\/+$/, "");
+  const form = new FormData();
+  const list = Array.isArray(files) ? files : Array.from(files || []);
+  for (const file of list) {
+    let toSend = file;
+    if (photoMeta) {
+      try {
+        toSend = await embedPhotoExif(file, photoMeta);
+      } catch (_e) {
+        toSend = file;
+      }
+    }
+    form.append("file", toSend);
+  }
+  const res = await fetch(base + "/upload", {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    let text;
+    try {
+      text = await res.text();
+    } catch {
+      text = res.statusText;
+    }
+    throw new Error(`Upload failed: ${res.status} ${text}`);
+  }
+  const data = await res.json();
+  // Normalize response to array of URLs
+  const urls = Array.isArray(data?.uploaded) ? data.uploaded : data?.url ? [data.url] : [];
+  const failed = Array.isArray(data?.failed) ? data.failed : [];
+  return { urls, failed };
 }
 
 export default api;

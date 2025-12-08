@@ -28,6 +28,15 @@ export async function embedPhotoExif(file, meta = {}) {
     const ext = (file.name || "").toLowerCase();
     const mime = file.type || "";
     if (!/jpe?g$/.test(ext) && !/jpe?g/.test(mime)) return file;
+    const dtValue = meta.dateTime || meta.runAt || new Date().toISOString();
+    const dt = new Date(dtValue);
+    const dtStr = isNaN(dt.getTime())
+      ? null
+      : `${dt.getFullYear()}:${String(dt.getMonth() + 1).padStart(2, "0")}:${String(
+          dt.getDate()
+        ).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(
+          dt.getMinutes()
+        ).padStart(2, "0")}:${String(dt.getSeconds()).padStart(2, "0")}`;
 
     const reader = new FileReader();
     const dataUrl = await new Promise((resolve, reject) => {
@@ -62,6 +71,12 @@ export async function embedPhotoExif(file, meta = {}) {
       exif["0th"][piexif.ImageIFD.ImageDescription] = desc;
       exif.Exif[piexif.ExifIFD.UserComment] = desc;
       exif["0th"][piexif.ImageIFD.Artist] = meta.businessName || "";
+    }
+
+    if (dtStr) {
+      exif.Exif[piexif.ExifIFD.DateTimeOriginal] = dtStr;
+      exif.Exif[piexif.ExifIFD.CreateDate] = dtStr;
+      exif["0th"][piexif.ImageIFD.DateTime] = dtStr;
     }
 
     const exifStr = piexif.dump(exif);
