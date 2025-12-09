@@ -4,6 +4,7 @@ import api from "../lib/api";
 export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
   const [items, setItems] = useState([]);
   const [profiles, setProfiles] = useState({});
+  const [compositeMap, setCompositeMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,6 +24,13 @@ export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
           : Array.isArray(hist)
           ? hist
           : [];
+        const comp = {};
+        list.forEach((it) => {
+          if (it.overlayUrl && it.usedImageUrl) {
+            comp[it.id || it.createdAt] = it.usedImageUrl;
+          }
+        });
+        setCompositeMap(comp);
         setItems(list.slice().reverse());
         const map = {};
         const arr = pr && pr.profiles ? pr.profiles : [];
@@ -64,6 +72,8 @@ export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
               <th>Link</th>
               <th>GBP URL</th>
               <th>Photo</th>
+              <th>Overlay</th>
+              <th>Composite</th>
             </tr>
           </thead>
           <tbody>
@@ -99,6 +109,24 @@ export default function PostsHistoryPanel({ selectedProfileId, refreshToken }) {
                 </td>
                 <td>
                   {it.usedImage || Number(it.mediaCount || 0) > 0 ? "Yes" : "No"}
+                </td>
+                <td>
+                  {it.overlayUrl ? (
+                    <a href={it.overlayUrl} target="_blank" rel="noreferrer">
+                      Overlay
+                    </a>
+                  ) : (
+                    <span className="muted small">—</span>
+                  )}
+                </td>
+                <td>
+                  {compositeMap[it.id || it.createdAt] ? (
+                    <a href={compositeMap[it.id || it.createdAt]} target="_blank" rel="noreferrer">
+                      Composite
+                    </a>
+                  ) : (
+                    <span className="muted small">—</span>
+                  )}
                 </td>
               </tr>
             ))}

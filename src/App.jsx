@@ -23,7 +23,7 @@ function resolveMediaPreviewUrl(mediaUrl, backendBase) {
   return "";
 }
 
-/** Simple modal gallery for /uploads */
+/** Simple modal gallery for /uploads with folder support */
 function MediaGalleryModal({
   open,
   onClose,
@@ -39,27 +39,96 @@ function MediaGalleryModal({
 }) {
   if (!open) return null;
 
-  const [items, setItems] = React.useState(
-    (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || []
-  );
+  const [items, setItems] = React.useState([]);
   const [selected, setSelected] = React.useState([]);
-  const [previewKey, setPreviewKey] = React.useState("");
+  const [previewUrl, setPreviewUrl] = React.useState("");
   const [deletingKey, setDeletingKey] = React.useState("");
   const [deletingMany, setDeletingMany] = React.useState(false);
   const [deletingAll, setDeletingAll] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState("");
+  const [currentFolder, setCurrentFolder] = React.useState("");
+  const [folderInput, setFolderInput] = React.useState("");
+  const [showAllFolders, setShowAllFolders] = React.useState(true);
   const fileInputRef = React.useRef(null);
   const notifySafe = notifyProp || (() => {});
   const lastSelectedRef = React.useRef(null);
 
+  const normalizeKey = React.useCallback((raw) => {
+    const str = String(raw || "");
+    const m = str.match(/\/(media|uploads)\/([^?#]+)/i);
+    if (m) {
+      try {
+        return decodeURIComponent(m[2]);
+      } catch (_e) {
+        return m[2];
+      }
+    }
+    return str.replace(/^\/+/, "");
+  }, []);
+
+  const normalizeFolder = React.useCallback((raw) => {
+    return String(raw || "")
+      .trim()
+      .replace(/[^a-zA-Z0-9/_-]+/g, "-")
+      .replace(/\/+/g, "/")
+      .replace(/^\/+|\/+$/g, "")
+      .replace(/(\.\.|\.)/g, "");
+  }, []);
+
+  const buildItem = React.useCallback(
+    (raw) => {
+      const key = normalizeKey(raw);
+      const withoutRoot = key.replace(/^gmb\//, "");
+      const idx = withoutRoot.lastIndexOf("/");
+      const folder = idx === -1 ? "" : withoutRoot.slice(0, idx);
+      let url = String(raw || "");
+      if (!/^https?:\/\//i.test(url)) {
+        if (url.startsWith("/")) {
+          url = backendBase
+            ? backendBase.replace(/\/+$/, "") + url
+            : url;
+        } else if (backendBase) {
+          url = backendBase.replace(/\/+$/, "") + "/media/" + encodeURIComponent(key);
+        }
+      }
+      return { key, url, folder };
+    },
+    [backendBase, normalizeKey]
+  );
+
   React.useEffect(() => {
     const list = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
-    setItems(list);
+    const normalized = list.map(buildItem);
+    setItems(normalized);
     setSelected([]);
-    setPreviewKey("");
+    setPreviewUrl("");
     setUploadError("");
-  }, [uploadsInfo]);
+    setShowAllFolders(true);
+  }, [uploadsInfo, buildItem]);
+
+  const folders = React.useMemo(() => {
+    const set = new Set();
+    (uploadsInfo?.folders || []).forEach((f) => {
+      if (!f) return;
+      if (typeof f === "string") set.add(f);
+      else if (f.name != null) set.add(String(f.name));
+    });
+    items.forEach((it) => set.add(it.folder || ""));
+    const out = Array.from(set);
+    out.sort((a, b) => {
+      if (a === b) return 0;
+      if (a === "") return -1;
+      if (b === "") return 1;
+      return a.localeCompare(b);
+    });
+    return out;
+  }, [items, uploadsInfo]);
+
+  const visibleItems = React.useMemo(() => {
+    if (showAllFolders) return items;
+    return items.filter((it) => (it.folder || "") === (currentFolder || ""));
+  }, [items, showAllFolders, currentFolder]);
 
   function toggle(key) {
     setSelected((prev) =>
@@ -71,7 +140,7 @@ function MediaGalleryModal({
     if (event?.shiftKey && lastSelectedRef.current != null) {
       const start = Math.min(lastSelectedRef.current, index);
       const end = Math.max(lastSelectedRef.current, index);
-      const rangeKeys = items.slice(start, end + 1);
+      const rangeKeys = visibleItems.slice(start, end + 1).map((it) => it.key);
       setSelected((prev) => {
         const set = new Set(prev);
         rangeKeys.forEach((k) => set.add(k));
@@ -85,7 +154,7 @@ function MediaGalleryModal({
 
   function normalizeValue(raw) {
     if (!raw) return;
-    const m = String(raw).match(/(\/uploads\/[^?#]+)/);
+    const m = String(raw).match(/(\/(?:uploads|media)\/[^?#]+)/i);
     const value = m ? m[1] : String(raw);
     return value;
   }
@@ -98,7 +167,10 @@ function MediaGalleryModal({
   function handleUseSelected() {
     if (onSelectMultiple && selected.length) {
       const normalized = selected
-        .map(normalizeValue)
+        .map((k) => {
+          const found = items.find((it) => it.key === k);
+          return found ? normalizeValue(found.url) : null;
+        })
         .filter(Boolean);
       onSelectMultiple(normalized);
       setSelected([]);
@@ -116,9 +188,12 @@ function MediaGalleryModal({
     setUploadError("");
     const meta = typeof photoMeta === "function" ? photoMeta() : photoMeta;
     try {
-      const { urls = [], failed = [] } = await uploadPhotos(fileList, backendBase, meta);
+      const { urls = [], failed = [] } = await uploadPhotos(fileList, backendBase, meta, {
+        folder: normalizeFolder(currentFolder),
+      });
       if (urls.length) {
-        setItems((prev) => [...urls, ...prev]);
+        const normalized = urls.map(buildItem);
+        setItems((prev) => [...normalized, ...prev]);
         setSelected([]);
         if (onUploadComplete) onUploadComplete(urls);
         notifySafe(
@@ -146,11 +221,11 @@ function MediaGalleryModal({
   }
 
   async function deleteAll() {
-    if (!items.length) return;
+    if (!visibleItems.length) return;
     setDeletingAll(true);
-    for (const key of items) {
+    for (const item of visibleItems) {
       // eslint-disable-next-line no-await-in-loop
-      await handleDelete(key);
+      await handleDelete(item.key);
     }
     setDeletingAll(false);
   }
@@ -165,12 +240,13 @@ function MediaGalleryModal({
 
   async function handleDelete(raw) {
     if (!raw) return;
+    const toClear = items.find((it) => it.key === raw);
     try {
       setDeletingKey(raw);
       await api.deleteUpload(raw);
-      setItems((prev) => prev.filter((it) => it !== raw));
+      setItems((prev) => prev.filter((it) => it.key !== raw && it !== raw));
       setSelected((prev) => prev.filter((it) => it !== raw));
-      if (previewKey === raw) setPreviewKey("");
+      if (toClear && previewUrl === toClear.url) setPreviewUrl("");
       if (onDeleteUpload) onDeleteUpload(raw);
     } catch (e) {
       console.error(e);
@@ -194,95 +270,142 @@ function MediaGalleryModal({
           <div>
             <h2>Media gallery</h2>
             <p className="muted small">
-              These are files from your <code>/uploads</code> folder (R2 /
-              PUBLIC_BASE_URL). Click one to use it as the default photo.
+              Organise uploads into folders and select single or multiple photos.
+              If a folder is selected, new uploads will be saved there.
             </p>
           </div>
           <button className="btn btn--ghost btn--small" onClick={onClose}>
             Close
           </button>
         </div>
-        <div className="action-row" style={{ justifyContent: "space-between" }}>
+        <div className="action-row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div className="action-row" style={{ alignItems: "flex-end" }}>
+            <div>
+              <label className="field-label">Folder</label>
+              <select
+                value={currentFolder}
+                onChange={(e) => {
+                  setCurrentFolder(e.target.value);
+                  setShowAllFolders(false);
+                }}
+              >
+                <option value="">Main</option>
+                {folders
+                  .filter((f) => f)
+                  .map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                {currentFolder && !folders.includes(currentFolder) ? (
+                  <option value={currentFolder}>{currentFolder}</option>
+                ) : null}
+              </select>
+            </div>
+            <div>
+              <label className="field-label">Add / switch folder</label>
+              <div className="action-row">
+                <input
+                  value={folderInput}
+                  onChange={(e) => setFolderInput(e.target.value)}
+                  placeholder="ex: clients/hotel"
+                />
+                <button
+                  className="btn btn--ghost btn--small"
+                  type="button"
+                  onClick={() => {
+                    const clean = normalizeFolder(folderInput);
+                    setCurrentFolder(clean);
+                    setShowAllFolders(false);
+                  }}
+                >
+                  Use folder
+                </button>
+              </div>
+            </div>
+            <label className="checkbox-inline" style={{ marginLeft: 12 }}>
+              <input
+                type="checkbox"
+                checked={showAllFolders}
+                onChange={(e) => setShowAllFolders(e.target.checked)}
+              />{" "}
+              Show all folders
+            </label>
+          </div>
           <div className="muted small">
             Selected {selected.length} item{selected.length === 1 ? "" : "s"}
             {uploadError ? (
               <span style={{ color: "#ff7a7a", marginLeft: 8 }}>{uploadError}</span>
             ) : null}
           </div>
-          <div className="action-row">
-                <label className="btn btn--ghost btn--small">
-                  {uploading ? "Uploading..." : "Upload to gallery"}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const files = e.target?.files;
-                      handleUploadFiles(files);
-                      if (e.target) e.target.value = "";
-                }}
-                disabled={uploading || !backendBase}
-              />
-            </label>
-            <button
-              className="btn btn--ghost btn--small"
-              onClick={handleUseSelected}
-              disabled={!selected.length}
-            >
-              Use selected
-            </button>
-            <button
-              className="btn btn--ghost btn--small"
-              onClick={deleteSelected}
-              disabled={!selected.length || deletingMany}
-            >
-              {deletingMany ? "Deleting..." : "Delete selected"}
-            </button>
-            <button
-              className="btn btn--ghost btn--small"
-              onClick={deleteAll}
-              disabled={!items.length || deletingAll}
-            >
-              {deletingAll ? "Deleting all..." : "Delete all"}
-            </button>
-            <button className="btn btn--ghost btn--small" onClick={onClose}>
-              Cancel
-            </button>
-          </div>
         </div>
-        {!items.length ? (
+        <div className="action-row" style={{ justifyContent: "flex-end" }}>
+          <label className="btn btn--ghost btn--small">
+            {uploading ? "Uploading..." : currentFolder ? `Upload to ${currentFolder}` : "Upload to gallery"}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const files = e.target?.files;
+                handleUploadFiles(files);
+                if (e.target) e.target.value = "";
+              }}
+              disabled={uploading || !backendBase}
+            />
+          </label>
+          <button
+            className="btn btn--ghost btn--small"
+            onClick={handleUseSelected}
+            disabled={!selected.length}
+          >
+            Use selected
+          </button>
+          <button
+            className="btn btn--ghost btn--small"
+            onClick={deleteSelected}
+            disabled={!selected.length || deletingMany}
+          >
+            {deletingMany ? "Deleting..." : "Delete selected"}
+          </button>
+          <button
+            className="btn btn--ghost btn--small"
+            onClick={deleteAll}
+            disabled={!visibleItems.length || deletingAll}
+          >
+            {deletingAll ? "Deleting all..." : "Delete shown"}
+          </button>
+          <button className="btn btn--ghost btn--small" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+        {!visibleItems.length ? (
           <div className="muted small">
-            No uploads yet. Use <strong>Upload from my computer</strong> first,
-            then refresh this gallery from Diagnostics → Media / uploads check.
+            No uploads in this view. Switch to “Show all folders” or upload into
+            {currentFolder ? ` ${currentFolder}.` : " the main folder."}
           </div>
         ) : (
           <div className="media-gallery-grid">
-            {items.map((raw, idx) => {
-              const key = String(raw);
-              const href = /^https?:\/\//i.test(key)
-                ? key
-                : backendBase
-                ? backendBase.replace(/\/+$/, "") + key
-                : key;
-
+            {visibleItems.map((item, idx) => {
+              const key = item.key;
               const labelMatch = key.match(/\/([^\/?#]+)$/);
               const label = labelMatch?.[1] || key;
-
+              const isSelected = selected.includes(key);
               return (
                 <div
                   key={key}
                   className={
                     "media-gallery-item" +
-                    (selected.includes(key) ? " media-gallery-item--selected" : "")
+                    (isSelected ? " media-gallery-item--selected" : "")
                   }
                   title={key}
                 >
                   <div className="media-gallery-checkbox">
                     <input
                       type="checkbox"
-                      checked={selected.includes(key)}
+                      checked={isSelected}
                       onChange={() => toggle(key)}
                     />
                   </div>
@@ -290,14 +413,14 @@ function MediaGalleryModal({
                     type="button"
                     className="media-gallery-thumb"
                     onClick={(e) => {
-                      setPreviewKey(key);
+                      setPreviewUrl(item.url);
                       toggleWithRange(key, idx, e);
                       if (onPreview) {
-                        onPreview(resolveMediaPreviewUrl(key, backendBase));
+                        onPreview(resolveMediaPreviewUrl(item.url, backendBase));
                       }
                     }}
                   >
-                    <img src={href} alt={label} loading="lazy" />
+                    <img src={resolveMediaPreviewUrl(item.url, backendBase)} alt={label} loading="lazy" />
                   </button>
                   <button
                     type="button"
@@ -306,7 +429,10 @@ function MediaGalleryModal({
                   >
                     <div className="media-gallery-label">{label}</div>
                     <div className="muted small">
-                      {selected.includes(key) ? "Selected" : "Click to select"}
+                      Folder: {item.folder || "Main"}
+                    </div>
+                    <div className="muted small">
+                      {isSelected ? "Selected" : "Click to select"}
                     </div>
                   </button>
                   <div className="action-row">
@@ -324,17 +450,17 @@ function MediaGalleryModal({
             })}
           </div>
         )}
-        {previewKey && (
+        {previewUrl && (
           <div className="media-preview">
             <div className="media-preview-thumb" style={{ width: 120, height: 120 }}>
               <img
-                src={resolveMediaPreviewUrl(previewKey, backendBase)}
+                src={resolveMediaPreviewUrl(previewUrl, backendBase)}
                 alt="Preview"
               />
             </div>
             <div className="media-preview-meta">
               <div className="media-preview-title">Preview</div>
-              <div className="media-preview-url small">{previewKey}</div>
+              <div className="media-preview-url small">{previewUrl}</div>
             </div>
           </div>
         )}
@@ -367,16 +493,17 @@ const CTA_LABELS = CTA_OPTIONS.reduce((acc, item) => {
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profiles", label: "Profiles & media" },
-  { id: "bulk", label: "Bulk posting" },
   { id: "photo-scheduler", label: "Photo scheduler" },
-  { id: "scheduler", label: "Scheduler" },
   { id: "history", label: "Post history" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
 
+const TAB_IDS = new Set(TABS.map((t) => t.id));
+
 const STORAGE_KEYS = {
   tab: "gmbviking_tab",
   selectedProfileId: "gmbviking_selected_profile",
+  overlayUrl: "gmbviking_overlay",
 };
 
 function getPostTypeLabel(type) {
@@ -645,7 +772,8 @@ export default function App() {
 
   const [tab, setTab] = useState(() => {
     if (typeof window === "undefined") return "dashboard";
-    return localStorage.getItem(STORAGE_KEYS.tab) || "dashboard";
+    const stored = localStorage.getItem(STORAGE_KEYS.tab);
+    return TAB_IDS.has(stored) ? stored : "dashboard";
   });
   const [previewDetails, setPreviewDetails] = useState(null);
   const [posting, setPosting] = useState(false);
@@ -663,6 +791,7 @@ export default function App() {
   const quickLinksSaveTimer = useRef(null);
   const quickLinksInitRef = useRef(false);
   const [quickLinksSaving, setQuickLinksSaving] = useState(false);
+  const [quickLinksHelpOpen, setQuickLinksHelpOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduledPosts, setScheduledPosts] = useState([]);
@@ -692,6 +821,11 @@ export default function App() {
   const [latestPhotosDebug, setLatestPhotosDebug] = useState([]);
   const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] = useState(false);
   const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
+  const [overlayUrl, setOverlayUrl] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(STORAGE_KEYS.overlayUrl) || "";
+  });
+  const [composedMediaUrl, setComposedMediaUrl] = useState("");
   const schedulingBusy =
     photoSchedulerStatus === "saving" ||
     photoSchedulerStatus === "stamping" ||
@@ -803,6 +937,108 @@ export default function App() {
     console.log(msg);
   }
 
+  function resolveAbsoluteMedia(url) {
+    if (!url) return "";
+    const direct = resolveMediaPreviewUrl(url, backendBase);
+    if (direct) return direct;
+    return url;
+  }
+
+  async function composeOverlayIfNeeded(baseUrl, overlay) {
+    if (!overlay || !baseUrl) return { url: baseUrl, overlayUsed: "" };
+    try {
+      const [baseRes, overlayRes] = await Promise.all([
+        fetch(resolveAbsoluteMedia(baseUrl)),
+        fetch(resolveAbsoluteMedia(overlay)),
+      ]);
+      if (!baseRes.ok) throw new Error("Failed to load base image");
+      if (!overlayRes.ok) throw new Error("Failed to load overlay image");
+      const [baseBlob, overlayBlob] = await Promise.all([
+        baseRes.blob(),
+        overlayRes.blob(),
+      ]);
+      const loadImageFromBlob = (blob) =>
+        new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            resolve(img);
+          };
+          img.onerror = (e) => {
+            URL.revokeObjectURL(url);
+            reject(e);
+          };
+          img.src = url;
+        });
+      const [baseImg, overlayImg] = await Promise.all([
+        loadImageFromBlob(baseBlob),
+        loadImageFromBlob(overlayBlob),
+      ]);
+      const srcW = baseImg.naturalWidth || baseImg.width;
+      const srcH = baseImg.naturalHeight || baseImg.height;
+      if (!srcW || !srcH) throw new Error("Base image has no dimensions");
+      // Normalize to a 4:3 canvas so Google’s feed crop shows the overlay
+      const targetW = 1200;
+      const targetH = 900; //look for const targetH = 900; (and targetW = 1200). Lower targetH to reduce the composed image’s height (keeping 4:3).
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      // cover-fit the base image to 4:3
+      const scaleBase = Math.max(targetW / srcW, targetH / srcH);
+      const drawBaseW = srcW * scaleBase;
+      const drawBaseH = srcH * scaleBase;
+      const baseDx = (targetW - drawBaseW) / 2;
+      const baseDy = (targetH - drawBaseH) / 2;
+      ctx.drawImage(baseImg, baseDx, baseDy, drawBaseW, drawBaseH);
+      // Anchor overlay near bottom, sized to ~85% of canvas width
+      const oW = overlayImg.naturalWidth || overlayImg.width || 1;
+      const oH = overlayImg.naturalHeight || overlayImg.height || 1;
+      const overlayTargetW = targetW * 1; //overlay control
+      const overlayScale = overlayTargetW / oW;
+      const overlayDrawW = overlayTargetW;
+      const overlayDrawH = oH * overlayScale;
+      const paddingY = Math.max(6, targetH * 0.01); //overlay controll
+      const overlayDx = (targetW - overlayDrawW) / 2;
+      const overlayDy = targetH - overlayDrawH - paddingY;
+      ctx.drawImage(
+        overlayImg,
+        overlayDx,
+        overlayDy,
+        overlayDrawW,
+        overlayDrawH
+      );
+      const blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(
+          (b) =>
+            b ? resolve(b) : reject(new Error("Failed to render overlay")),
+          "image/jpeg",
+          0.92
+        )
+      );
+      const file = new File([blob], `overlay-${Date.now()}.jpg`, {
+        type: blob.type || "image/jpeg",
+      });
+      const uploaded = await uploadPhoto(file, backendBase, null, {
+        folder: "composite",
+      });
+      const urls = Array.isArray(uploaded?.uploaded)
+        ? uploaded.uploaded
+        : uploaded?.url
+        ? [uploaded.url]
+        : [];
+      const composedUrlRaw = urls[0] || baseUrl;
+      // Prefer unencoded path for downstream fetchers (GBP)
+      const composedUrl = composedUrlRaw.replace(/%2F/gi, "/");
+      return { url: composedUrl, overlayUsed: overlay };
+    } catch (e) {
+      console.warn("Overlay compose failed", e);
+      notify(e.message || "Overlay failed; posting without overlay.");
+      return { url: baseUrl, overlayUsed: "" };
+    }
+  }
+
   async function bootstrap() {
     try {
       const [h, v, pr, sc, ss] = await Promise.all([
@@ -835,6 +1071,11 @@ export default function App() {
   useEffect(() => {
     bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(STORAGE_KEYS.overlayUrl, overlayUrl || "");
+  }, [overlayUrl]);
 
   useEffect(() => {
     let alive = true;
@@ -886,6 +1127,7 @@ export default function App() {
     setNeighbourhoodResults([]);
     mapBoundsRef.current = null;
     setMapBounds(null);
+    setQuickLinksHelpOpen(false);
     if (selectedId) refreshHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedProfile?.defaults]);
@@ -1476,7 +1718,7 @@ export default function App() {
     }
     if (mediaUrl) {
       const isHttps = /^https:\/\/.+\.(png|jpe?g|webp)$/i.test(mediaUrl);
-      const isUploads = /^\/uploads\/.+\.(png|jpe?g|webp)$/i.test(mediaUrl);
+      const isUploads = /^\/(uploads|media)\/.+\.(png|jpe?g|webp)$/i.test(mediaUrl);
       if (!isHttps && !isUploads) {
         notify(
           "Media must be https://... OR /uploads/your-file(.png/.jpg/.jpeg/.webp)."
@@ -1503,13 +1745,22 @@ export default function App() {
     setPosting(true);
     setPostNowStatus("posting");
     try {
+      let mediaForPost = mediaUrl;
+      let overlayUsed = "";
+      if (overlayUrl && mediaUrl) {
+        const composed = await composeOverlayIfNeeded(mediaUrl, overlayUrl);
+        mediaForPost = composed.url;
+        overlayUsed = composed.overlayUsed;
+        setComposedMediaUrl(mediaForPost);
+      }
       await api.postNow({
         profileId: selectedId,
         postText,
         cta,
         linkUrl: cta === "CALL_NOW" ? "" : effectiveLink,
         phone: phoneCandidate.replace(/^tel:/i, ""),
-        mediaUrl,
+        mediaUrl: mediaForPost,
+        overlayUrl: overlayUsed,
         topicType: postType,
         eventTitle,
         eventStart,
@@ -1567,6 +1818,7 @@ export default function App() {
       linkUrl: effectiveLink,
       phone: phoneCandidate.replace(/^tel:/i, ""),
       mediaUrl,
+      overlayUrl,
       topicType: postType,
       eventTitle,
       eventStart,
@@ -1577,6 +1829,16 @@ export default function App() {
     };
     try {
       setBusy(true);
+      let mediaForPost = mediaUrl;
+      let overlayUsed = overlayUrl;
+      if (overlayUrl && mediaUrl) {
+        const composed = await composeOverlayIfNeeded(mediaUrl, overlayUrl);
+        mediaForPost = composed.url;
+        overlayUsed = composed.overlayUsed;
+        setComposedMediaUrl(mediaForPost);
+      }
+      body.mediaUrl = mediaForPost;
+      body.overlayUrl = overlayUsed;
       if (editingScheduledId) {
         await api.updateScheduledPost(editingScheduledId, {
           runAt: when.toISOString(),
@@ -2639,7 +2901,18 @@ export default function App() {
                   </div>
                   <div className="link-options">
                     <div className="link-options__header">
-                      <span className="field-label">Quick links</span>
+                      <div className="quick-links-title">
+                        <span className="field-label">Quick links</span>
+                        <button
+                          type="button"
+                          className="quick-links-info-btn"
+                          onClick={() => setQuickLinksHelpOpen((open) => !open)}
+                          aria-expanded={quickLinksHelpOpen}
+                          aria-label="Show quick link instructions"
+                        >
+                          ?
+                        </button>
+                      </div>
                       <span className="muted small">
                         {quickLinksSaving ? "Saving..." : "Auto-saved"}
                       </span>
@@ -2664,15 +2937,41 @@ export default function App() {
                         + Add link
                       </button>
                     </div>
+                    {quickLinksHelpOpen && (
+                      <div className="quick-links-tip">
+                        <div className="quick-links-tip__title">How to grab each link</div>
+                        <ul className="quick-links-tip__list">
+                          <li>
+                            <strong>Reviews:</strong> Open your business in Google Maps → Reviews → Share → Copy link.
+                            <span className="muted small"> Example: https://maps.app.goo.gl/noNsstq3bHik398i7</span>
+                          </li>
+                          <li>
+                            <strong>Service Area:</strong> Search your company in Google Maps, open the business card, tap Share → Copy link.
+                            <span className="muted small"> Example: https://maps.app.goo.gl/BhWfAacsEfrMTFY96</span>
+                          </li>
+                          <li>
+                            <strong>Last Post:</strong> Use the auto-generated share.google link from your posting tool.
+                            <span className="muted small"> Example: https://share.google/XYK4LIzLQSI0KhwYO</span>
+                          </li>
+                          <li>
+                            <strong>Area Map (City):</strong> Search the city in Google Maps, open the city view, tap Share → Copy link.
+                            <span className="muted small"> Example: https://maps.app.goo.gl/EpZ2gJuTXBH8nd2E7</span>
+                          </li>
+                        </ul>
+                      </div>
+                    )}
                     <div className="quick-links-grid">
                       {[
-                        { label: "Reviews \u27a1", value: reviewLink, setter: setReviewLink },
-                        { label: "Service Area \u27a1", value: serviceAreaLink, setter: setServiceAreaLink },
-                        { label: "Area Map \u27a1", value: areaMapLink, setter: setAreaMapLink },
+                        { label: "Reviews", value: reviewLink, setter: setReviewLink },
+                        { label: "Service Area", value: serviceAreaLink, setter: setServiceAreaLink },
+                        { label: "Area Map", value: areaMapLink, setter: setAreaMapLink },
                       ].map((item, idx) => (
                         <div className="link-option-row" key={`quick-${idx}`}>
-                          <div className="field-label" style={{ minWidth: 120 }}>
-                            {item.label}
+                          <div className="quick-link-label" style={{ minWidth: 140 }}>
+                            <span className="quick-link-icon" aria-hidden="true">
+                              🔗
+                            </span>
+                            <span>{item.label}</span>
                           </div>
                           <input
                             value={item.value}
@@ -2692,6 +2991,63 @@ export default function App() {
                         </div>
                       ))}
                     </div>
+                  </div>
+                  <div className="panel-section">
+                    <div className="link-options__header" style={{ alignItems: "flex-start" }}>
+                      <span className="field-label">Overlay image (optional)</span>
+                      <span className="muted small">
+                        Composites this on top of the selected photo when posting.
+                      </span>
+                    </div>
+                    <div className="link-option-row" style={{ alignItems: "center" }}>
+                      <input
+                        value={overlayUrl}
+                        onChange={(e) => setOverlayUrl(e.target.value)}
+                        placeholder="https://.../overlay.png or /uploads/overlay.png"
+                        style={{ flex: 1 }}
+                      />
+                      <div className="link-option-actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          onClick={() => setOverlayUrl("")}
+                          disabled={!overlayUrl}
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          onClick={async () => {
+                            if (!uploadsInfo) await loadUploadsInfo();
+                            setMediaGalleryContext("overlay");
+                            setMediaGalleryOpen(true);
+                          }}
+                          disabled={!backendBase}
+                        >
+                          Pick from gallery
+                        </button>
+                      </div>
+                    </div>
+                    {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
+                      <div className="media-preview small-thumb">
+                        <div className="media-preview-thumb overlay-wrapper">
+                          <img
+                            src={resolveMediaPreviewUrl(mediaUrl || overlayUrl, backendBase)}
+                            alt="Base preview"
+                          />
+                          <img
+                            className="media-overlay-img"
+                            src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
+                            alt="Overlay preview"
+                          />
+                        </div>
+                        <div className="media-preview-meta">
+                          <div className="media-preview-title">Overlay preview</div>
+                          <div className="media-preview-url small">{overlayUrl}</div>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   <p className="muted small">
                     EXIF geo settings now live in Photo scheduler → Photo metadata. Regular posts don’t need geo tagging.
@@ -2739,11 +3095,18 @@ export default function App() {
 
                   {resolveMediaPreviewUrl(mediaUrl, backendBase) ? (
                     <div className="media-preview">
-                      <div className="media-preview-thumb">
+                      <div className="media-preview-thumb overlay-wrapper">
                         <img
-                          src={resolveMediaPreviewUrl(mediaUrl, backendBase)}
+                          src={resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)}
                           alt="Default media"
                         />
+                        {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
+                          <img
+                            className="media-overlay-img"
+                            src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
+                            alt="Overlay"
+                          />
+                        ) : null}
                       </div>
                       <div className="media-preview-meta">
                         <div className="media-preview-title">Current default photo</div>
@@ -3056,16 +3419,25 @@ export default function App() {
 
                       {resolveMediaPreviewUrl(mediaUrl, backendBase) ? (
                         <div className="post-preview__media">
-                          <img
-                            src={resolveMediaPreviewUrl(mediaUrl, backendBase)}
-                            alt="Post media preview"
-                            onClick={() =>
-                              setLightboxSrc(
-                                resolveMediaPreviewUrl(mediaUrl, backendBase)
-                              )
-                            }
-                            style={{ cursor: "pointer" }}
-                          />
+                          <div className="overlay-wrapper">
+                            <img
+                              src={resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)}
+                              alt="Post media preview"
+                              onClick={() =>
+                                setLightboxSrc(
+                                  resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)
+                                )
+                              }
+                              style={{ cursor: "pointer" }}
+                            />
+                            {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
+                              <img
+                                className="media-overlay-img"
+                                src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
+                                alt="Overlay"
+                              />
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
 
@@ -4554,10 +4926,15 @@ export default function App() {
                             });
                           }}
                         />
+                        </div>
+                        {overlayUrl ? (
+                          <div className="media-preview-url small">
+                            Overlay: {overlayUrl}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
               </div>
             </section>
           )}
@@ -4658,17 +5035,28 @@ export default function App() {
           photoMeta={mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null}
           notify={notify}
           onSelect={(value) => {
-            setMediaUrl(value);
-            setPhotoSchedMedia(value);
+            if (mediaGalleryContext === "overlay") {
+              setOverlayUrl(value);
+              notify("Overlay selected from gallery.");
+            } else {
+              setMediaUrl(value);
+              setPhotoSchedMedia(value);
+              notify("Photo selected from gallery.");
+            }
             setMediaGalleryOpen(false);
-            notify("Photo selected from gallery.");
           }}
           onSelectMultiple={(values) => {
             const list = Array.isArray(values) ? values : [];
-            setBulkImages(list.slice(0, 50));
-            setMediaUrl(list[0] || "");
-            setPhotoSchedMediaList(list.slice(0, 100));
-            notify(`${list.length} photo(s) selected for bulk scheduling.`);
+            if (mediaGalleryContext === "overlay") {
+              const first = list[0] || "";
+              if (first) setOverlayUrl(first);
+              notify("Overlay selected from gallery.");
+            } else {
+              setBulkImages(list.slice(0, 50));
+              setMediaUrl(list[0] || "");
+              setPhotoSchedMediaList(list.slice(0, 100));
+              notify(`${list.length} photo(s) selected for bulk scheduling.`);
+            }
           }}
           onPreview={(src) => setLightboxSrc(src || "")}
           onDeleteUpload={(raw) => {

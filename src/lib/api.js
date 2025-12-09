@@ -155,8 +155,9 @@ const api = {
     const qs = `?accountId=${encodeURIComponent(accountId)}`;
     return doFetch(`/locations${qs}`);
   },
-  async getUploadsList() {
-    return doFetch("/uploads-list");
+  async getUploadsList(folder = "") {
+    const qs = folder ? `?folder=${encodeURIComponent(folder)}` : "";
+    return doFetch(`/uploads-list${qs}`);
   },
   async checkUploads() {
     return doFetch("/uploads-check");
@@ -278,7 +279,12 @@ export async function updateProfileBulkAccess(profileId, enabled) {
 
 import { embedPhotoExif } from "./photoExif";
 
-export async function uploadPhoto(file, baseOverride, photoMeta = null) {
+export async function uploadPhoto(
+  file,
+  baseOverride,
+  photoMeta = null,
+  options = {}
+) {
   const base = (baseOverride || (await getApiBase())).replace(/\/+$/, "");
   let toSend = file;
   if (photoMeta) {
@@ -290,6 +296,9 @@ export async function uploadPhoto(file, baseOverride, photoMeta = null) {
   }
   const form = new FormData();
   form.append("file", toSend);
+   if (options.folder) {
+    form.append("folder", options.folder);
+  }
   const res = await fetch(base + "/upload", {
     method: "POST",
     body: form,
@@ -306,7 +315,12 @@ export async function uploadPhoto(file, baseOverride, photoMeta = null) {
   return res.json();
 }
 
-export async function uploadPhotos(files, baseOverride, photoMeta = null) {
+export async function uploadPhotos(
+  files,
+  baseOverride,
+  photoMeta = null,
+  options = {}
+) {
   const base = (baseOverride || (await getApiBase())).replace(/\/+$/, "");
   const form = new FormData();
   const list = Array.isArray(files) ? files : Array.from(files || []);
@@ -320,6 +334,9 @@ export async function uploadPhotos(files, baseOverride, photoMeta = null) {
       }
     }
     form.append("file", toSend);
+  }
+  if (options.folder) {
+    form.append("folder", options.folder);
   }
   const res = await fetch(base + "/upload", {
     method: "POST",
