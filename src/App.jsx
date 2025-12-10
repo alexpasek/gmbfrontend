@@ -9,18 +9,32 @@ import "./App.css";
 import BackendBadge from "./components/BackendBadge";
 import PostsHistoryPanel from "./components/PostsHistoryPanel";
 import PhotoScheduleCalendar from "./components/PhotoScheduleCalendar";
+import PostPreview from "./components/PostPreview";
+import ProfilesLinksPanel from "./components/ProfilesLinksPanel";
+import SchedulePanel from "./components/SchedulePanel";
+import BulkDraftsTable from "./components/BulkDraftsTable";
+import BulkDraftEditor from "./components/BulkDraftEditor";
+import DiagnosticsPanels from "./components/DiagnosticsPanels";
+
+const DEFAULT_BACKEND_BASE = "https://gmb-automation-backend.webtoronto22.workers.dev";
 
 /** Resolve a URL we can actually <img src> */
 function resolveMediaPreviewUrl(mediaUrl, backendBase) {
   if (!mediaUrl) return "";
   if (/^https?:\/\//i.test(mediaUrl)) return mediaUrl;
-  if (mediaUrl.startsWith("/")) {
-    if (backendBase) {
-      return backendBase.replace(/\/+$/, "") + mediaUrl;
-    }
-    return mediaUrl;
+
+  const base = String(backendBase || "").replace(/\/+$/, "");
+  const path = mediaUrl.startsWith("/") ? mediaUrl : `/${mediaUrl}`;
+
+  if (!base) {
+    return path;
   }
-  return "";
+
+  if (path.startsWith("/uploads/") || path.startsWith("/media/")) {
+    return `${base}${path}`;
+  }
+
+  return path;
 }
 
 /** Simple modal gallery for /uploads with folder support */
@@ -82,16 +96,18 @@ function MediaGalleryModal({
       const withoutRoot = key.replace(/^gmb\//, "");
       const idx = withoutRoot.lastIndexOf("/");
       const folder = idx === -1 ? "" : withoutRoot.slice(0, idx);
+
+      const baseCandidate = backendBase || DEFAULT_BACKEND_BASE;
+      const base = baseCandidate ? baseCandidate.replace(/\/+$/, "") : "";
       let url = String(raw || "");
-      if (!/^https?:\/\//i.test(url)) {
-        if (url.startsWith("/")) {
-          url = backendBase
-            ? backendBase.replace(/\/+$/, "") + url
-            : url;
-        } else if (backendBase) {
-          url = backendBase.replace(/\/+$/, "") + "/media/" + encodeURIComponent(key);
-        }
+
+      // Always rebuild a clean media URL from the decoded key.
+      if (base) {
+        url = base + "/media/" + encodeURI(key);
+      } else {
+        url = url.startsWith("/") ? url : "/media/" + encodeURI(key);
       }
+
       return { key, url, folder };
     },
     [backendBase, normalizeKey]
@@ -152,26 +168,15 @@ function MediaGalleryModal({
     lastSelectedRef.current = index;
   }
 
-  function normalizeValue(raw) {
-    if (!raw) return;
-    const m = String(raw).match(/(\/(?:uploads|media)\/[^?#]+)/i);
-    const value = m ? m[1] : String(raw);
-    return value;
-  }
-
-  function handleSelect(raw) {
-    const value = normalizeValue(raw);
-    if (value) onSelect(value);
-  }
-
   function handleUseSelected() {
     if (onSelectMultiple && selected.length) {
       const normalized = selected
         .map((k) => {
           const found = items.find((it) => it.key === k);
-          return found ? normalizeValue(found.url) : null;
+          return found ? found.url : null;
         })
         .filter(Boolean);
+      console.log("[MediaGalleryModal] Selected items", normalized);
       onSelectMultiple(normalized);
       setSelected([]);
       if (onClose) onClose();
@@ -188,9 +193,14 @@ function MediaGalleryModal({
     setUploadError("");
     const meta = typeof photoMeta === "function" ? photoMeta() : photoMeta;
     try {
-      const { urls = [], failed = [] } = await uploadPhotos(fileList, backendBase, meta, {
-        folder: normalizeFolder(currentFolder),
-      });
+      const { urls = [], failed = [] } = await uploadPhotos(
+        fileList,
+        backendBase,
+        meta,
+        {
+          folder: normalizeFolder(currentFolder),
+        }
+      );
       if (urls.length) {
         const normalized = urls.map(buildItem);
         setItems((prev) => [...normalized, ...prev]);
@@ -198,10 +208,14 @@ function MediaGalleryModal({
         if (onUploadComplete) onUploadComplete(urls);
         notifySafe(
           `Uploaded ${urls.length} file(s)` +
-            (failed.length ? `, failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+            (failed.length
+              ? `, failed: ${failed.map((f) => f.name || f).join(", ")}`
+              : "")
         );
       } else if (failed.length) {
-        notifySafe(`Failed to upload: ${failed.map((f) => f.name || f).join(", ")}`);
+        notifySafe(
+          `Failed to upload: ${failed.map((f) => f.name || f).join(", ")}`
+        );
       }
     } catch (e) {
       setUploadError(e.message || "Upload failed");
@@ -270,15 +284,18 @@ function MediaGalleryModal({
           <div>
             <h2>Media gallery</h2>
             <p className="muted small">
-              Organise uploads into folders and select single or multiple photos.
-              If a folder is selected, new uploads will be saved there.
+              Organise uploads into folders and select single or multiple
+              photos. If a folder is selected, new uploads will be saved there.
             </p>
           </div>
           <button className="btn btn--ghost btn--small" onClick={onClose}>
             Close
           </button>
         </div>
-        <div className="action-row" style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div
+          className="action-row"
+          style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+        >
           <div className="action-row" style={{ alignItems: "flex-end" }}>
             <div>
               <label className="field-label">Folder</label>
@@ -335,13 +352,19 @@ function MediaGalleryModal({
           <div className="muted small">
             Selected {selected.length} item{selected.length === 1 ? "" : "s"}
             {uploadError ? (
-              <span style={{ color: "#ff7a7a", marginLeft: 8 }}>{uploadError}</span>
+              <span style={{ color: "#ff7a7a", marginLeft: 8 }}>
+                {uploadError}
+              </span>
             ) : null}
           </div>
         </div>
         <div className="action-row" style={{ justifyContent: "flex-end" }}>
           <label className="btn btn--ghost btn--small">
-            {uploading ? "Uploading..." : currentFolder ? `Upload to ${currentFolder}` : "Upload to gallery"}
+            {uploading
+              ? "Uploading..."
+              : currentFolder
+              ? `Upload to ${currentFolder}`
+              : "Upload to gallery"}
             <input
               ref={fileInputRef}
               type="file"
@@ -416,11 +439,17 @@ function MediaGalleryModal({
                       setPreviewUrl(item.url);
                       toggleWithRange(key, idx, e);
                       if (onPreview) {
-                        onPreview(resolveMediaPreviewUrl(item.url, backendBase));
+                        onPreview(
+                          resolveMediaPreviewUrl(item.url, backendBase)
+                        );
                       }
                     }}
                   >
-                    <img src={resolveMediaPreviewUrl(item.url, backendBase)} alt={label} loading="lazy" />
+                    <img
+                      src={resolveMediaPreviewUrl(item.url, backendBase)}
+                      alt={label}
+                      loading="lazy"
+                    />
                   </button>
                   <button
                     type="button"
@@ -452,7 +481,10 @@ function MediaGalleryModal({
         )}
         {previewUrl && (
           <div className="media-preview">
-            <div className="media-preview-thumb" style={{ width: 120, height: 120 }}>
+            <div
+              className="media-preview-thumb"
+              style={{ width: 120, height: 120 }}
+            >
               <img
                 src={resolveMediaPreviewUrl(previewUrl, backendBase)}
                 alt="Preview"
@@ -596,7 +628,7 @@ function addGeoLogHelper(setter, msg, data = null) {
   const entry = {
     ts: new Date().toISOString(),
     msg,
-    data
+    data,
   };
   console.log("[geo]", msg, data || "");
   setter((prev) => [entry, ...prev].slice(0, 30));
@@ -641,7 +673,7 @@ function computeMapBounds(lat, lng, radiusMeters = 2000) {
     west: +(lng - delta).toFixed(5),
     south: +(lat - delta).toFixed(5),
     east: +(lng + delta).toFixed(5),
-    north: +(lat + delta).toFixed(5)
+    north: +(lat + delta).toFixed(5),
   };
 }
 
@@ -672,7 +704,7 @@ async function fetchOverpassPlaces(city, lat, lng, radiusMeters = 15000) {
   const res = await fetch("https://overpass-api.de/api/interpreter", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(body)}`
+    body: `data=${encodeURIComponent(body)}`,
   });
   if (!res.ok) throw new Error("Overpass lookup failed");
   const data = await res.json();
@@ -685,7 +717,7 @@ async function fetchOverpassPlaces(city, lat, lng, radiusMeters = 15000) {
     out.push({
       name: String(name).trim(),
       lat: latVal != null ? +latVal : null,
-      lng: lngVal != null ? +lngVal : null
+      lng: lngVal != null ? +lngVal : null,
     });
   });
   return out;
@@ -699,7 +731,7 @@ function buildAutoCaption(profile, meta = {}, fallbackKeywords = "") {
   const pieces = [
     keywords || "Popcorn ceiling removal",
     city || "",
-    neighbourhood || ""
+    neighbourhood || "",
   ]
     .map((p) => String(p || "").trim())
     .filter(Boolean)
@@ -766,7 +798,7 @@ export default function App() {
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const [backendBase, setBackendBase] = useState("");
+  const [backendBase, setBackendBase] = useState(DEFAULT_BACKEND_BASE);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [toggleBusyId, setToggleBusyId] = useState("");
 
@@ -819,7 +851,8 @@ export default function App() {
   const [latestPhotos, setLatestPhotos] = useState([]);
   const [latestPhotosLoading, setLatestPhotosLoading] = useState(false);
   const [latestPhotosDebug, setLatestPhotosDebug] = useState([]);
-  const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] = useState(false);
+  const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] =
+    useState(false);
   const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
   const [overlayUrl, setOverlayUrl] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -851,7 +884,125 @@ export default function App() {
         (activeDraftBody.phone ? `tel:${activeDraftBody.phone}` : "")
       : activeDraftBody.linkUrl || "";
   const activeDraftMedia = activeDraftBody.mediaUrl || "";
+  const activeDraftOverlay = activeDraftBody.overlayUrl || "";
+  const quickLinksAddDisabled =
+    !!reviewLink && !!serviceAreaLink && !!areaMapLink;
+  const handleQuickLinksAdd = () => {
+    if (quickLinksAddDisabled) return;
+    const targetValue =
+      linkUrl || getFallbackLink(selectedProfile) || "https://";
+    if (!reviewLink) {
+      setReviewLink(targetValue);
+    } else if (!serviceAreaLink) {
+      setServiceAreaLink(targetValue);
+    } else if (!areaMapLink) {
+      setAreaMapLink(targetValue);
+    }
+  };
   const activeDraftHref = resolveCtaLink(activeDraftCta, activeDraftLink);
+  const previewProfileName =
+    previewDetails?.profileName ||
+    selectedProfile?.businessName ||
+    selectedId ||
+    "—";
+  const previewProfileCity = selectedProfile?.city || "";
+  const previewFocusArea = previewDetails?.neighbourhood || "";
+  const previewBodyText = (postText || preview || "").trim() || "—";
+  const previewCtaHref = resolveCtaLink(cta, linkUrl);
+  const previewLinkContent = linkUrl ? (
+    previewCtaHref ? (
+      <a
+        href={previewCtaHref}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {linkUrl}
+      </a>
+    ) : (
+      <span className="error-text">
+        {cta === "CALL_NOW" ? "Use tel:+1... or https://" : "Needs https:// link"}
+      </span>
+    )
+  ) : (
+    <span className="muted small">No link provided</span>
+  );
+  const previewPhotoContent = mediaUrl ? (
+    <span className="muted small">{mediaUrl}</span>
+  ) : (
+    <span className="muted small">None attached</span>
+  );
+  const previewMetaRows = [
+    { label: "Link", content: previewLinkContent },
+    { label: "Photo", content: previewPhotoContent },
+  ];
+  const previewMediaPreviewUrl = resolveMediaPreviewUrl(
+    composedMediaUrl || mediaUrl,
+    backendBase
+  );
+  const previewOverlayPreviewUrl = resolveMediaPreviewUrl(
+    overlayUrl,
+    backendBase
+  );
+  const handlePreviewMediaClick = previewMediaPreviewUrl
+    ? () => setLightboxSrc(previewMediaPreviewUrl)
+    : null;
+  const previewFooterText = previewDetails?.generatedAt
+    ? `Generated ${new Date(previewDetails.generatedAt).toLocaleString()}`
+    : "Live preview reflects the text and CTA above.";
+  const previewWarning =
+    previewDetails?.profileId &&
+    selectedId &&
+    previewDetails.profileId !== selectedId ? (
+      <>
+        <strong>Heads up:</strong> preview was generated for{" "}
+        {previewDetails.profileName || previewDetails.profileId}. Select the
+        right profile and click Generate preview again to refresh.
+      </>
+    ) : null;
+  const activeDraftLinkContent = activeDraftLink ? (
+    activeDraftHref ? (
+      <a href={activeDraftHref} target="_blank" rel="noreferrer">
+        {activeDraftLink}
+      </a>
+    ) : (
+      <span className="error-text">
+        {activeDraftCta === "CALL_NOW"
+          ? "Use tel:+1... or https://"
+          : "Needs https:// link"}
+      </span>
+    )
+  ) : (
+    <span className="muted small">No link provided</span>
+  );
+  const activeDraftPhotoContent = activeDraftBody.mediaUrl ? (
+    <span className="muted small">{activeDraftBody.mediaUrl}</span>
+  ) : (
+    <span className="muted small">None attached</span>
+  );
+  const activeDraftMetaRows = [
+    { label: "Link", content: activeDraftLinkContent },
+    { label: "Photo", content: activeDraftPhotoContent },
+  ];
+  const activeDraftMediaPreviewUrl = resolveMediaPreviewUrl(
+    activeDraftMedia,
+    backendBase
+  );
+  const activeDraftOverlayPreviewUrl = resolveMediaPreviewUrl(
+    activeDraftOverlay,
+    backendBase
+  );
+  const activeDraftProfileName =
+    selectedProfile?.businessName ||
+    activeBulkDraft?.profileId ||
+    selectedId ||
+    "—";
+  const activeDraftCity = selectedProfile?.city || "";
+  const activeDraftTopicLabel = getPostTypeLabel(
+    activeDraftBody.topicType || "STANDARD"
+  );
+  const activeDraftRunAtValue =
+    (activeBulkDraft?.runAt && activeBulkDraft.runAt.slice(0, 16)) || "";
+  const isRegeneratingActive = regeneratingDraftIndex === activeDraftIndex;
   const photoNeighbourhoodOptions = useMemo(
     () => parseNeighbourhoodInput(photoNeighbourhoodsInput),
     [photoNeighbourhoodsInput]
@@ -861,7 +1012,7 @@ export default function App() {
     return parseNeighbourhoodInput(photoNeighbourhoodsInput).map((name) => ({
       name,
       lat: null,
-      lng: null
+      lng: null,
     }));
   }, [neighbourhoodResults, photoNeighbourhoodsInput]);
   const photoPreviewMedia = useMemo(() => {
@@ -874,17 +1025,22 @@ export default function App() {
       neighbourhood:
         photoNeighbourhood ||
         photoNeighbourhoodOptions[0] ||
-        (Array.isArray(selectedProfile?.neighbourhoods) ? selectedProfile.neighbourhoods[0] : "") ||
-        ""
+        (Array.isArray(selectedProfile?.neighbourhoods)
+          ? selectedProfile.neighbourhoods[0]
+          : "") ||
+        "",
     };
-    return photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+    return (
+      photoSchedCaption ||
+      buildAutoCaption(selectedProfile, meta, photoKeywords)
+    );
   }, [
     photoSchedCaption,
     selectedProfile,
     photoCity,
     photoNeighbourhood,
     photoNeighbourhoodOptions,
-    photoKeywords
+    photoKeywords,
   ]);
   const logGeo = (msg, data = null) => addGeoLogHelper(setGeoLogs, msg, data);
   const mapBoundsEffective = mapBounds || mapBoundsRef.current;
@@ -892,19 +1048,21 @@ export default function App() {
     const candidates = [
       {
         lat: parseFloat(photoLat),
-        lng: parseFloat(photoLng)
+        lng: parseFloat(photoLng),
       },
       {
         lat: cityCenterRef.current.lat,
-        lng: cityCenterRef.current.lng
+        lng: cityCenterRef.current.lng,
       },
       neighbourhoodResults.find((n) => n.lat != null && n.lng != null),
-      { lat: 43.6532, lng: -79.3832 } // Toronto fallback
+      { lat: 43.6532, lng: -79.3832 }, // Toronto fallback
     ];
     const pick = candidates.find(
       (c) => c && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))
     );
-    return pick ? { lat: parseFloat(pick.lat), lng: parseFloat(pick.lng) } : null;
+    return pick
+      ? { lat: parseFloat(pick.lat), lng: parseFloat(pick.lng) }
+      : null;
   }, [photoLat, photoLng, neighbourhoodResults]);
 
   const mapPreviewUrl = useMemo(() => {
@@ -914,7 +1072,10 @@ export default function App() {
 
   const mapEmbedUrl = useMemo(() => {
     if (mapBoundsEffective) return buildEmbedMapUrl(mapBoundsEffective);
-    if (mapCenter) return buildEmbedMapUrl(computeMapBounds(mapCenter.lat, mapCenter.lng, 2000));
+    if (mapCenter)
+      return buildEmbedMapUrl(
+        computeMapBounds(mapCenter.lat, mapCenter.lng, 2000)
+      );
     return "";
   }, [mapBoundsEffective, mapCenter]);
 
@@ -1082,9 +1243,14 @@ export default function App() {
     (async () => {
       try {
         const base = await getApiBase();
-        if (alive) setBackendBase(base || "");
+        if (!alive) return;
+        if (base) {
+          setBackendBase(base.replace(/\/+$/, ""));
+        } else {
+          setBackendBase(DEFAULT_BACKEND_BASE);
+        }
       } catch (_e) {
-        if (alive) setBackendBase("http://127.0.0.1:8787");
+        if (alive) setBackendBase(DEFAULT_BACKEND_BASE);
       }
     })();
     return () => {
@@ -1097,11 +1263,7 @@ export default function App() {
     const d = (p && p.defaults) || {};
     setCta(d.cta || "CALL_NOW");
     setLinkUrl(d.linkUrl || p?.landingUrl || "");
-    setLinkOptions(
-      Array.isArray(d.linkOptions)
-        ? d.linkOptions
-        : []
-    );
+    setLinkOptions(Array.isArray(d.linkOptions) ? d.linkOptions : []);
     setReviewLink(d.reviewLink || "");
     setServiceAreaLink(d.serviceAreaLink || "");
     setAreaMapLink(d.areaMapLink || "");
@@ -1148,7 +1310,12 @@ export default function App() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cta, phoneCandidate, selectedProfile?.defaults?.linkUrl, selectedProfile?.landingUrl]);
+  }, [
+    cta,
+    phoneCandidate,
+    selectedProfile?.defaults?.linkUrl,
+    selectedProfile?.landingUrl,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1183,7 +1350,7 @@ export default function App() {
     photoRandomizeRadius,
     photoKeywords,
     photoCategories,
-    linkUrl
+    linkUrl,
   ]);
 
   // Build a preview meta list for all selected photos so the user can see coords/neighbourhoods
@@ -1195,7 +1362,9 @@ export default function App() {
       : [];
     const previews = list.slice(0, 100).map((media) => {
       const meta = buildPhotoMeta();
-      const caption = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+      const caption =
+        photoSchedCaption ||
+        buildAutoCaption(selectedProfile, meta, photoKeywords);
       return { media, meta, caption };
     });
     setPhotoSelectionPreview(previews);
@@ -1210,7 +1379,7 @@ export default function App() {
     photoRandomizeRadius,
     photoKeywords,
     photoCategories,
-    selectedProfile
+    selectedProfile,
   ]);
 
   useEffect(() => {
@@ -1242,7 +1411,11 @@ export default function App() {
       setPhotoLat(String(firstWithCoords.lat));
       setPhotoLng(String(firstWithCoords.lng));
       setPhotoRandomizeCoords(true);
-      const b = computeMapBounds(firstWithCoords.lat, firstWithCoords.lng, 2000);
+      const b = computeMapBounds(
+        firstWithCoords.lat,
+        firstWithCoords.lng,
+        2000
+      );
       mapBoundsRef.current = b;
       setMapBounds(b);
     }
@@ -1311,7 +1484,8 @@ export default function App() {
       }
     }, 500);
     return () => {
-      if (quickLinksSaveTimer.current) clearTimeout(quickLinksSaveTimer.current);
+      if (quickLinksSaveTimer.current)
+        clearTimeout(quickLinksSaveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewLink, serviceAreaLink, areaMapLink, selectedProfile?.profileId]);
@@ -1349,7 +1523,9 @@ export default function App() {
     const candidates =
       neighbourhoodOptionsDetailed.length > 0
         ? neighbourhoodOptionsDetailed
-        : parseNeighbourhoodInput(photoNeighbourhoodsInput).map((name) => ({ name }));
+        : parseNeighbourhoodInput(photoNeighbourhoodsInput).map((name) => ({
+            name,
+          }));
     const chosen =
       candidates.length > 0
         ? candidates[Math.floor(Math.random() * candidates.length)]
@@ -1358,29 +1534,43 @@ export default function App() {
       photoNeighbourhood && neighbourhoodOptionsDetailed.length
         ? neighbourhoodOptionsDetailed.find(
             (n) =>
-              String(n.name || "").trim().toLowerCase() ===
-              String(photoNeighbourhood || "").trim().toLowerCase()
+              String(n.name || "")
+                .trim()
+                .toLowerCase() ===
+              String(photoNeighbourhood || "")
+                .trim()
+                .toLowerCase()
           )
         : null;
     const neighbourhood =
       (chosen && chosen.name) ||
       photoNeighbourhood ||
-      (Array.isArray(profile.neighbourhoods) ? profile.neighbourhoods[0] : "") ||
+      (Array.isArray(profile.neighbourhoods)
+        ? profile.neighbourhoods[0]
+        : "") ||
       "";
     const baseLat =
       (chosenDetailed && chosenDetailed.lat != null && chosenDetailed.lat) ||
-      (chosen && chosen.lat != null && chosen.lng != null && !photoLat && !photoLng
+      (chosen &&
+      chosen.lat != null &&
+      chosen.lng != null &&
+      !photoLat &&
+      !photoLng
         ? chosen.lat
         : photoLat || cityCenterRef.current.lat || "");
     const baseLng =
       (chosenDetailed && chosenDetailed.lng != null && chosenDetailed.lng) ||
-      (chosen && chosen.lat != null && chosen.lng != null && !photoLng && !photoLat
+      (chosen &&
+      chosen.lat != null &&
+      chosen.lng != null &&
+      !photoLng &&
+      !photoLat
         ? chosen.lng
         : photoLng || cityCenterRef.current.lng || "");
     const coords =
       photoRandomizeCoords && baseLat && baseLng
-      ? randomizeCoords(baseLat, baseLng, photoRandomizeRadius)
-      : { lat: baseLat, lng: baseLng };
+        ? randomizeCoords(baseLat, baseLng, photoRandomizeRadius)
+        : { lat: baseLat, lng: baseLng };
 
     const serviceList = String(photoKeywords || "")
       .split(",")
@@ -1405,7 +1595,8 @@ export default function App() {
       city,
       neighbourhood,
       serviceKeywords:
-        chosenService || (Array.isArray(profile.keywords) ? profile.keywords.join(", ") : ""),
+        chosenService ||
+        (Array.isArray(profile.keywords) ? profile.keywords.join(", ") : ""),
       categoryKeywords: chosenCategory || "",
       businessName: profile.businessName || "",
       website: profile.landingUrl || profile.defaults?.linkUrl || linkUrl || "",
@@ -1459,7 +1650,7 @@ export default function App() {
       logGeo("Neighbourhood lookup start", {
         city: q,
         lat: hasBaseCoords ? baseLatNum : null,
-        lng: hasBaseCoords ? baseLngNum : null
+        lng: hasBaseCoords ? baseLngNum : null,
       });
       const url =
         "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&extratags=1&q=" +
@@ -1467,8 +1658,8 @@ export default function App() {
       const res = await fetch(url, {
         headers: {
           "Accept-Language": "en",
-          "User-Agent": "gmb-automation/1.0"
-        }
+          "User-Agent": "gmb-automation/1.0",
+        },
       });
       if (!res.ok) {
         throw new Error(`Lookup failed (${res.status})`);
@@ -1484,21 +1675,29 @@ export default function App() {
           addr.hamlet,
           addr.municipality,
           addr.county,
-          addr.state
+          addr.state,
         ]
           .map(normalizeCityName)
           .filter(Boolean);
         return cityCandidates.includes(targetCityNorm);
       });
-      const cityCenter = cityHit && cityHit.lat && cityHit.lon
-        ? { lat: parseFloat(cityHit.lat), lng: parseFloat(cityHit.lon) }
-        : { lat: null, lng: null };
-      const radiusMeters = Math.max(1000, Number(photoSearchRadius || 20) * 1000);
+      const cityCenter =
+        cityHit && cityHit.lat && cityHit.lon
+          ? { lat: parseFloat(cityHit.lat), lng: parseFloat(cityHit.lon) }
+          : { lat: null, lng: null };
+      const radiusMeters = Math.max(
+        1000,
+        Number(photoSearchRadius || 20) * 1000
+      );
       if (!hasBaseCoords && cityCenter.lat != null && cityCenter.lng != null) {
         setPhotoLat(String(cityCenter.lat));
         setPhotoLng(String(cityCenter.lng));
         cityCenterRef.current = cityCenter;
-        const b = computeMapBounds(cityCenter.lat, cityCenter.lng, radiusMeters);
+        const b = computeMapBounds(
+          cityCenter.lat,
+          cityCenter.lng,
+          radiusMeters
+        );
         mapBoundsRef.current = b;
         setMapBounds(b);
       } else if (hasBaseCoords) {
@@ -1518,7 +1717,7 @@ export default function App() {
           byName.set(v, {
             name: v,
             lat: isNaN(lat) ? null : +lat,
-            lng: isNaN(lng) ? null : +lng
+            lng: isNaN(lng) ? null : +lng,
           });
         }
       };
@@ -1533,7 +1732,7 @@ export default function App() {
           addr.hamlet,
           addr.municipality,
           addr.county,
-          addr.state
+          addr.state,
         ]
           .map(normalizeCityName)
           .filter(Boolean);
@@ -1542,12 +1741,17 @@ export default function App() {
               (c) => c === targetCityNorm || c.includes(targetCityNorm)
             )
           : true;
-        const centerLat = hasBaseCoords ? baseLatNum : cityCenterRef.current.lat;
-        const centerLng = hasBaseCoords ? baseLngNum : cityCenterRef.current.lng;
+        const centerLat = hasBaseCoords
+          ? baseLatNum
+          : cityCenterRef.current.lat;
+        const centerLng = hasBaseCoords
+          ? baseLngNum
+          : cityCenterRef.current.lng;
         const centerReady = !isNaN(centerLat) && !isNaN(centerLng);
         const withinRadius =
           centerReady && !isNaN(entryLat) && !isNaN(entryLng)
-            ? haversineKm(centerLat, centerLng, entryLat, entryLng) <= Math.max(5, Number(photoSearchRadius || 20))
+            ? haversineKm(centerLat, centerLng, entryLat, entryLng) <=
+              Math.max(5, Number(photoSearchRadius || 20))
             : false;
         // Keep only if city matches, or (city not matched but within radius of a known center)
         if (!cityMatch && !withinRadius) return;
@@ -1562,16 +1766,22 @@ export default function App() {
           addr.road,
           addr.pedestrian,
           addr.industrial,
-          addr.commercial
-        ]
-          .forEach((n) => addName(n, entryLat, entryLng));
+          addr.commercial,
+        ].forEach((n) => addName(n, entryLat, entryLng));
       });
       let list = Array.from(byName.values());
-      if (cityCenterRef.current.lat != null && cityCenterRef.current.lng != null) {
+      if (
+        cityCenterRef.current.lat != null &&
+        cityCenterRef.current.lng != null
+      ) {
         list = list
           .map((it) => {
             if (it.lat == null || it.lng == null) {
-              return { ...it, lat: cityCenterRef.current.lat, lng: cityCenterRef.current.lng };
+              return {
+                ...it,
+                lat: cityCenterRef.current.lat,
+                lng: cityCenterRef.current.lng,
+              };
             }
             return it;
           })
@@ -1581,16 +1791,30 @@ export default function App() {
         list.unshift({
           name: q,
           lat:
-            cityCenterRef.current.lat != null ? cityCenterRef.current.lat : hasBaseCoords ? baseLatNum : null,
+            cityCenterRef.current.lat != null
+              ? cityCenterRef.current.lat
+              : hasBaseCoords
+              ? baseLatNum
+              : null,
           lng:
-            cityCenterRef.current.lng != null ? cityCenterRef.current.lng : hasBaseCoords ? baseLngNum : null
+            cityCenterRef.current.lng != null
+              ? cityCenterRef.current.lng
+              : hasBaseCoords
+              ? baseLngNum
+              : null,
         });
       }
       if (!list.length) {
-        throw new Error("No neighbourhoods found for this city/coords. Try another city or add manually.");
+        throw new Error(
+          "No neighbourhoods found for this city/coords. Try another city or add manually."
+        );
       }
       // Fallback: bounded search around city center if too few results
-      if (list.length < 5 && cityCenterRef.current.lat != null && cityCenterRef.current.lng != null) {
+      if (
+        list.length < 5 &&
+        cityCenterRef.current.lat != null &&
+        cityCenterRef.current.lng != null
+      ) {
         try {
           const lat = cityCenterRef.current.lat;
           const lng = cityCenterRef.current.lng;
@@ -1599,7 +1823,7 @@ export default function App() {
             lng - delta,
             lat + delta,
             lng + delta,
-            lat - delta
+            lat - delta,
           ].join(",");
           const boundedUrl =
             "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&extratags=1&bounded=1&viewbox=" +
@@ -1609,8 +1833,8 @@ export default function App() {
           const boundedRes = await fetch(boundedUrl, {
             headers: {
               "Accept-Language": "en",
-              "User-Agent": "gmb-automation/1.0"
-            }
+              "User-Agent": "gmb-automation/1.0",
+            },
           });
           if (boundedRes.ok) {
             const boundedData = await boundedRes.json();
@@ -1629,7 +1853,7 @@ export default function App() {
                 addr.road,
                 addr.pedestrian,
                 addr.industrial,
-                addr.commercial
+                addr.commercial,
               ].forEach((n) => addName(n, entryLat, entryLng));
             });
             list = Array.from(byName.values());
@@ -1640,11 +1864,18 @@ export default function App() {
       }
       // Overpass enrichment to pick up more neighbourhoods/streets
       try {
-        const radiusMeters = Math.max(1000, Number(photoSearchRadius || 20) * 1000);
+        const radiusMeters = Math.max(
+          1000,
+          Number(photoSearchRadius || 20) * 1000
+        );
         const overpassList = await fetchOverpassPlaces(
           q,
-          cityCenterRef.current.lat != null ? cityCenterRef.current.lat : baseLatNum,
-          cityCenterRef.current.lng != null ? cityCenterRef.current.lng : baseLngNum,
+          cityCenterRef.current.lat != null
+            ? cityCenterRef.current.lat
+            : baseLatNum,
+          cityCenterRef.current.lng != null
+            ? cityCenterRef.current.lng
+            : baseLngNum,
           radiusMeters
         );
         overpassList.forEach((item) => {
@@ -1666,7 +1897,7 @@ export default function App() {
         city: q,
         baseLat: hasBaseCoords ? baseLatNum : cityCenterRef.current.lat,
         baseLng: hasBaseCoords ? baseLngNum : cityCenterRef.current.lng,
-        radiusKm: photoSearchRadius
+        radiusKm: photoSearchRadius,
       });
       refreshPhotoMetaSample();
       refreshGeoSamples();
@@ -1704,10 +1935,13 @@ export default function App() {
   function validateBeforePost(effectiveLink) {
     if (cta === "CALL_NOW") {
       const phoneOk =
-        (phoneCandidate && /(\+?[0-9][0-9\-\s\(\)]{5,})/.test(phoneCandidate)) ||
+        (phoneCandidate &&
+          /(\+?[0-9][0-9\-\s\(\)]{5,})/.test(phoneCandidate)) ||
         /^tel:\+?[0-9]/i.test(linkUrl || "");
       if (!phoneOk) {
-        notify("Call now requires a phone number (set a tel:+ link or default phone).");
+        notify(
+          "Call now requires a phone number (set a tel:+ link or default phone)."
+        );
         return false;
       }
     } else {
@@ -1718,7 +1952,9 @@ export default function App() {
     }
     if (mediaUrl) {
       const isHttps = /^https:\/\/.+\.(png|jpe?g|webp)$/i.test(mediaUrl);
-      const isUploads = /^\/(uploads|media)\/.+\.(png|jpe?g|webp)$/i.test(mediaUrl);
+      const isUploads = /^\/(uploads|media)\/.+\.(png|jpe?g|webp)$/i.test(
+        mediaUrl
+      );
       if (!isHttps && !isUploads) {
         notify(
           "Media must be https://... OR /uploads/your-file(.png/.jpg/.jpeg/.webp)."
@@ -1737,7 +1973,11 @@ export default function App() {
         : isValidHttpLink(linkUrl)
         ? linkUrl
         : getFallbackLink(selectedProfile);
-    if (cta !== "CALL_NOW" && isValidHttpLink(effectiveLink) && !isValidHttpLink(linkUrl)) {
+    if (
+      cta !== "CALL_NOW" &&
+      isValidHttpLink(effectiveLink) &&
+      !isValidHttpLink(linkUrl)
+    ) {
       setLinkUrl(effectiveLink);
     }
     if (!validateBeforePost(effectiveLink)) return;
@@ -1767,7 +2007,7 @@ export default function App() {
         eventEnd,
         offerTitle,
         offerCoupon,
-        offerRedeemUrl
+        offerRedeemUrl,
       });
       notify("Posted!");
       setPostNowStatus("posted");
@@ -1873,9 +2113,15 @@ export default function App() {
       const filtered = selectedId
         ? items.filter((it) => it.profileId === selectedId)
         : items;
-      filtered.sort((a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime());
-      const queued = filtered.filter((it) => (it.status || "QUEUED") === "QUEUED");
-      const history = filtered.filter((it) => (it.status || "QUEUED") !== "QUEUED");
+      filtered.sort(
+        (a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime()
+      );
+      const queued = filtered.filter(
+        (it) => (it.status || "QUEUED") === "QUEUED"
+      );
+      const history = filtered.filter(
+        (it) => (it.status || "QUEUED") !== "QUEUED"
+      );
       setPhotoJobs(queued);
       setPhotoJobsHistory(history);
     } catch (e) {
@@ -1895,22 +2141,37 @@ export default function App() {
     const mediaList = Array.from(
       new Set(mediaListRaw.map((m) => String(m || "").trim()).filter(Boolean))
     );
-    if (!mediaList.length) return notify("Pick at least one photo for scheduling");
-    const baseDt = new Date(`${photoSchedDate}T${photoSchedTime || "00:00"}:00`);
+    if (!mediaList.length)
+      return notify("Pick at least one photo for scheduling");
+    const baseDt = new Date(
+      `${photoSchedDate}T${photoSchedTime || "00:00"}:00`
+    );
     if (isNaN(baseDt.getTime())) return notify("Set a valid start date/time");
     const makeId = () =>
-      (typeof crypto !== "undefined" && crypto.randomUUID
+      typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2));
-    const requestedCount = Math.max(1, Math.min(100, parseInt(photoSchedCount, 10) || mediaList.length || 1));
-    const dayStep = photoSchedCadence === "DAILY2" ? 2 : photoSchedCadence === "DAILY3" ? 3 : 1;
+        : Math.random().toString(36).slice(2);
+    const requestedCount = Math.max(
+      1,
+      Math.min(100, parseInt(photoSchedCount, 10) || mediaList.length || 1)
+    );
+    const dayStep =
+      photoSchedCadence === "DAILY2"
+        ? 2
+        : photoSchedCadence === "DAILY3"
+        ? 3
+        : 1;
     const items = [];
     setPhotoSchedulerStatus("stamping");
     for (let i = 0; i < requestedCount; i++) {
       const meta = buildPhotoMeta(); // build fresh meta per photo for randomized GPS/neighbourhood
-      const runAt = new Date(baseDt.getTime() + i * dayStep * 86400000).toISOString();
+      const runAt = new Date(
+        baseDt.getTime() + i * dayStep * 86400000
+      ).toISOString();
       meta.dateTime = runAt;
-      const captionText = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+      const captionText =
+        photoSchedCaption ||
+        buildAutoCaption(selectedProfile, meta, photoKeywords);
       const mediaRaw = mediaList[i % mediaList.length];
       const mediaUrl = await ensurePhotoHasMeta(mediaRaw, meta);
       items.push({
@@ -1940,7 +2201,8 @@ export default function App() {
   }
 
   async function updateSelectedPhotoJob() {
-    if (!editingPhotoJobId) return notify("Pick a scheduled photo from the calendar first.");
+    if (!editingPhotoJobId)
+      return notify("Pick a scheduled photo from the calendar first.");
     if (!selectedId) return notify("Select a profile first");
     const mediaUrlRaw =
       photoSchedMediaList.length > 0
@@ -1959,7 +2221,9 @@ export default function App() {
       runAt: when.toISOString(),
       body: {
         mediaUrl: stampedUrl || mediaUrlRaw,
-        caption: photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords),
+        caption:
+          photoSchedCaption ||
+          buildAutoCaption(selectedProfile, meta, photoKeywords),
         meta,
       },
     };
@@ -1991,13 +2255,15 @@ export default function App() {
     const meta = buildPhotoMeta();
     meta.dateTime = new Date().toISOString();
     const stampedUrl = await ensurePhotoHasMeta(mediaUrlRaw, meta);
-    const captionText = photoSchedCaption || buildAutoCaption(selectedProfile, meta, photoKeywords);
+    const captionText =
+      photoSchedCaption ||
+      buildAutoCaption(selectedProfile, meta, photoKeywords);
     try {
       setPhotoSchedulerStatus("posting");
       await api.postPhotoNow({
         profileId: selectedId,
         mediaUrl: stampedUrl || mediaUrlRaw,
-        caption: captionText
+        caption: captionText,
       });
       notify("Photo posted to GBP library");
       setPhotoSchedulerStatus("posted");
@@ -2028,7 +2294,11 @@ export default function App() {
       const res = await api.getLatestPhotos(selectedId, 10);
       const items = Array.isArray(res?.items) ? res.items : [];
       setLatestPhotos(items);
-      notify(items.length ? "Fetched latest GBP photos" : "No photos returned from GBP");
+      notify(
+        items.length
+          ? "Fetched latest GBP photos"
+          : "No photos returned from GBP"
+      );
     } catch (e) {
       notify(e.message || "Failed to load GBP photos");
     } finally {
@@ -2043,7 +2313,11 @@ export default function App() {
       const res = await api.getLatestPhotosDebug(selectedId, 20, 5);
       const items = Array.isArray(res?.items) ? res.items : [];
       setLatestPhotosDebug(items);
-      notify(items.length ? "Fetched GBP photos (debug, multi-page)" : "No photos returned from GBP");
+      notify(
+        items.length
+          ? "Fetched GBP photos (debug, multi-page)"
+          : "No photos returned from GBP"
+      );
     } catch (e) {
       notify(e.message || "Failed to load GBP photos (debug)");
     } finally {
@@ -2059,7 +2333,9 @@ export default function App() {
       if (!resp.ok) throw new Error(`Fetch failed (${resp.status})`);
       const blob = await resp.blob();
       const filename = (url.split("/").pop() || "photo.jpg").split("?")[0];
-      const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
+      const file = new File([blob], filename, {
+        type: blob.type || "image/jpeg",
+      });
       const res = await uploadPhoto(file, backendBase, meta);
       return res?.url || url;
     } catch (e) {
@@ -2093,15 +2369,109 @@ export default function App() {
     );
   }
 
+  const handleDraftRunAtChange = (idx, value) => {
+    const dt = new Date(value);
+    const fallback = bulkDrafts[idx]?.runAt;
+    updateBulkDraft(idx, {
+      runAt: isNaN(dt.getTime()) ? fallback : dt.toISOString(),
+    });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftCtaChange = (idx, value) => {
+    updateBulkDraftBody(idx, { cta: value });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftLinkChange = (idx, value) => {
+    updateBulkDraftBody(idx, { linkUrl: value });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftMediaChange = (idx, value) => {
+    updateBulkDraftBody(idx, { mediaUrl: value });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftOverlayApply = (idx, value) => {
+    const overlayValue = value || overlayUrl || "";
+    if (!overlayValue) return;
+    updateBulkDraftBody(idx, { overlayUrl: overlayValue });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftOverlayClear = (idx) => {
+    updateBulkDraftBody(idx, { overlayUrl: "" });
+    setActiveDraftIndex(idx);
+  };
+
+  const handleDraftPreview = (idx) => setActiveDraftIndex(idx);
+
+  const handleDraftRemove = (idx) => {
+    setBulkDrafts((prev) => prev.filter((_, i) => i !== idx));
+    setActiveDraftIndex((prevIdx) => {
+      if (prevIdx < 0) return prevIdx;
+      if (idx < prevIdx) return prevIdx - 1;
+      if (idx === prevIdx) return Math.max(0, prevIdx - 1);
+      return prevIdx;
+    });
+  };
+
+  const handleActiveDraftBodyChange = (patch) => {
+    if (activeDraftIndex < 0) return;
+    updateBulkDraftBody(activeDraftIndex, patch);
+  };
+
+  const handleActiveDraftRunAtChange = (value) => {
+    if (activeDraftIndex < 0) return;
+    const dt = new Date(value);
+    const fallback = activeBulkDraft?.runAt;
+    updateBulkDraft(activeDraftIndex, {
+      runAt: isNaN(dt.getTime()) ? fallback : dt.toISOString(),
+    });
+  };
+
+  const handleActiveDraftUseDefaultOverlay = () => {
+    if (activeDraftIndex < 0) return;
+    handleDraftOverlayApply(activeDraftIndex, overlayUrl);
+  };
+
+  const handleDraftOverlayGallery = (idx) => {
+    if (idx < 0) return;
+    setMediaGalleryContext(`overlay-draft-${idx}`);
+    setMediaGalleryOpen(true);
+  };
+
+  const handleActiveDraftPickOverlay = () => {
+    handleDraftOverlayGallery(activeDraftIndex);
+  };
+
+  const handleActiveDraftClearOverlay = () => {
+    if (activeDraftIndex < 0) return;
+    handleDraftOverlayClear(activeDraftIndex);
+  };
+
+  const goToPreviousDraft = () => {
+    setActiveDraftIndex((idx) => Math.max(0, idx - 1));
+  };
+
+  const goToNextDraft = () => {
+    setActiveDraftIndex((idx) =>
+      bulkDrafts.length ? Math.min(bulkDrafts.length - 1, idx + 1) : idx
+    );
+  };
+
+  const handleRegenerateActiveDraft = () => {
+    if (activeDraftIndex < 0) return;
+    regenerateBulkDraft(activeDraftIndex);
+  };
+
   async function autoScheduleWithAi() {
     if (!selectedId) return notify("Select a profile first");
     const images =
-      bulkImages.length > 0
-        ? bulkImages
-        : mediaUrl
-        ? [mediaUrl]
-        : [];
-    if (!images.length) return notify("Select at least one image (gallery or photo URL).");
+      bulkImages.length > 0 ? bulkImages : mediaUrl ? [mediaUrl] : [];
+    if (!images.length)
+      return notify("Select at least one image (gallery or photo URL).");
     const durationDays =
       bulkDurationPreset === "all"
         ? Number.MAX_SAFE_INTEGER
@@ -2159,7 +2529,8 @@ export default function App() {
 
   async function buildBulkDrafts() {
     if (!selectedId) return notify("Select a profile first");
-    if (!bulkImages.length) return notify("Select images from the gallery first.");
+    if (!bulkImages.length)
+      return notify("Select images from the gallery first.");
     const durationDays =
       bulkDurationPreset === "all"
         ? Number.MAX_SAFE_INTEGER
@@ -2216,7 +2587,8 @@ export default function App() {
     const draft = bulkDrafts[idx];
     if (!draft) return;
     const media = draft.body?.mediaUrl;
-    if (!media) return notify("Add a media URL to this draft before regenerating.");
+    if (!media)
+      return notify("Add a media URL to this draft before regenerating.");
     const profileIdForDraft = draft.profileId || selectedId;
     if (!profileIdForDraft) return notify("Select a profile first");
     try {
@@ -2477,7 +2849,11 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const { urls = [], failed = [] } = await uploadPhotos(files, backendBase, null);
+      const { urls = [], failed = [] } = await uploadPhotos(
+        files,
+        backendBase,
+        null
+      );
       if (urls.length) {
         setBulkImages((prev) => [...prev, ...urls].slice(-50));
         if (!mediaUrl) setMediaUrl(urls[0]);
@@ -2486,7 +2862,9 @@ export default function App() {
         }
         notify(
           `Uploaded ${urls.length} photo(s) and added to bulk selection.` +
-            (failed.length ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+            (failed.length
+              ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}`
+              : "")
         );
       } else {
         notify("Upload succeeded but no URL was returned.");
@@ -2509,13 +2887,19 @@ export default function App() {
     }
     setUploadingPhoto(true);
     try {
-      const { urls = [], failed = [] } = await uploadPhotos(files, backendBase, buildPhotoMeta());
+      const { urls = [], failed = [] } = await uploadPhotos(
+        files,
+        backendBase,
+        buildPhotoMeta()
+      );
       if (urls.length) {
         setPhotoSchedMedia(urls[0]);
         setPhotoSchedMediaList((prev) => [...urls, ...prev].slice(0, 100));
         notify(
           `Uploaded ${urls.length} photo(s) with EXIF geo for scheduler.` +
-            (failed.length ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}` : "")
+            (failed.length
+              ? ` Failed: ${failed.map((f) => f.name || f).join(", ")}`
+              : "")
         );
       } else {
         notify("Upload succeeded but no URL was returned.");
@@ -2604,9 +2988,7 @@ export default function App() {
           {TABS.map((t) => (
             <button
               key={t.id}
-              className={
-                "nav-item" + (tab === t.id ? " nav-item--active" : "")
-              }
+              className={"nav-item" + (tab === t.id ? " nav-item--active" : "")}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -2727,9 +3109,9 @@ export default function App() {
                   >
                     Run scheduler once
                   </button>
-                  </div>
                 </div>
-              </section>
+              </div>
+            </section>
           )}
 
           {tab === "bulk" && (
@@ -2780,678 +3162,106 @@ export default function App() {
 
           {tab === "profiles" && (
             <>
-              <section className="panel">
-                <div className="panel-title">CTA & links</div>
-                <div className="panel-section">
-                  <label className="field-label">Action button</label>
-                  <select
-                    value={cta}
-                    onChange={(e) => setCta(e.target.value)}
-                  >
-                    {CTA_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="muted small">
-                    Call now will use the phone below; other CTAs use the link field.
-                  </p>
-                </div>
-                <div className="panel-section">
-                  <label className="field-label">Phone (used for Call now)</label>
-                  <input
-                    value={defaultPhone}
-                    onChange={(e) => setDefaultPhone(e.target.value)}
-                    placeholder="+1 555 123 4567"
-                  />
-                  <p className="muted small">
-                    Detected phone: {phoneCandidate || "None set"}
-                  </p>
-                </div>
-                <div className="panel-section">
-                  <label className="field-label">Link</label>
-                  <input
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    placeholder="https://your-site/page"
-                    disabled={cta === "CALL_NOW"}
-                  />
-                  {linkOptions.length > 0 && (
-                    <div className="action-row">
-                      <select
-                        defaultValue=""
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v) setLinkUrl(v);
-                        }}
-                        disabled={cta === "CALL_NOW"}
-                      >
-                        <option value="">Pick saved link</option>
-                        {linkOptions.map((u, idx) => (
-                          <option key={idx} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="muted small">
-                        Saved links work best with “Learn more”.
-                      </span>
-                    </div>
-                  )}
-                  <p className="muted small">
-                    {cta === "CALL_NOW"
-                      ? "Link disabled for Call now; phone above will be used."
-                      : "Provide a valid https link for this CTA."}
-                  </p>
-                  <div className="link-options">
-                    <div className="link-options__header">
-                      <span className="field-label">
-                        Saved links for this profile (best with “Learn more”)
-                      </span>
-                      <span className="muted small">
-                        {linkOptionsSaving ? "Saving..." : "Auto-saved"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--small"
-                        onClick={() => setLinkOptions((prev) => [...prev, ""])}
-                      >
-                        + Add link
-                      </button>
-                    </div>
-                    {linkOptions.length === 0 && (
-                      <div className="muted small">No saved links yet.</div>
-                    )}
-                    {linkOptions.map((u, idx) => (
-                      <div className="link-option-row" key={idx}>
-                        <input
-                          value={u}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setLinkOptions((prev) =>
-                              prev.map((item, i) => (i === idx ? v : item))
-                            );
-                          }}
-                          placeholder="https://your-site/page"
-                        />
-                        <div className="link-option-actions">
-                          <button
-                            type="button"
-                            className="btn btn--ghost btn--small"
-                            onClick={() => setLinkUrl(u)}
-                            disabled={!u || cta === "CALL_NOW"}
-                          >
-                            Use
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn--ghost btn--small"
-                            onClick={() =>
-                              setLinkOptions((prev) =>
-                                prev.filter((_, i) => i !== idx)
-                              )
-                            }
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="link-options">
-                    <div className="link-options__header">
-                      <div className="quick-links-title">
-                        <span className="field-label">Quick links</span>
-                        <button
-                          type="button"
-                          className="quick-links-info-btn"
-                          onClick={() => setQuickLinksHelpOpen((open) => !open)}
-                          aria-expanded={quickLinksHelpOpen}
-                          aria-label="Show quick link instructions"
-                        >
-                          ?
-                        </button>
-                      </div>
-                      <span className="muted small">
-                        {quickLinksSaving ? "Saving..." : "Auto-saved"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--small"
-                        onClick={() => {
-                          const targetValue =
-                            linkUrl ||
-                            getFallbackLink(selectedProfile) ||
-                            "https://";
-                          if (!reviewLink) {
-                            setReviewLink(targetValue);
-                          } else if (!serviceAreaLink) {
-                            setServiceAreaLink(targetValue);
-                          } else if (!areaMapLink) {
-                            setAreaMapLink(targetValue);
-                          }
-                        }}
-                        disabled={!!reviewLink && !!serviceAreaLink && !!areaMapLink}
-                      >
-                        + Add link
-                      </button>
-                    </div>
-                    {quickLinksHelpOpen && (
-                      <div className="quick-links-tip">
-                        <div className="quick-links-tip__title">How to grab each link</div>
-                        <ul className="quick-links-tip__list">
-                          <li>
-                            <strong>Reviews:</strong> Open your business in Google Maps → Reviews → Share → Copy link.
-                            <span className="muted small"> Example: https://maps.app.goo.gl/noNsstq3bHik398i7</span>
-                          </li>
-                          <li>
-                            <strong>Service Area:</strong> Search your company in Google Maps, open the business card, tap Share → Copy link.
-                            <span className="muted small"> Example: https://maps.app.goo.gl/BhWfAacsEfrMTFY96</span>
-                          </li>
-                          <li>
-                            <strong>Last Post:</strong> Use the auto-generated share.google link from your posting tool.
-                            <span className="muted small"> Example: https://share.google/XYK4LIzLQSI0KhwYO</span>
-                          </li>
-                          <li>
-                            <strong>Area Map (City):</strong> Search the city in Google Maps, open the city view, tap Share → Copy link.
-                            <span className="muted small"> Example: https://maps.app.goo.gl/EpZ2gJuTXBH8nd2E7</span>
-                          </li>
-                        </ul>
-                      </div>
-                    )}
-                    <div className="quick-links-grid">
-                      {[
-                        { label: "Reviews", value: reviewLink, setter: setReviewLink },
-                        { label: "Service Area", value: serviceAreaLink, setter: setServiceAreaLink },
-                        { label: "Area Map", value: areaMapLink, setter: setAreaMapLink },
-                      ].map((item, idx) => (
-                        <div className="link-option-row" key={`quick-${idx}`}>
-                          <div className="quick-link-label" style={{ minWidth: 140 }}>
-                            <span className="quick-link-icon" aria-hidden="true">
-                              🔗
-                            </span>
-                            <span>{item.label}</span>
-                          </div>
-                          <input
-                            value={item.value}
-                            onChange={(e) => item.setter(e.target.value)}
-                            placeholder="https://your-site/page"
-                            style={{ flex: 1, minWidth: 280 }}
-                          />
-                          <div className="link-option-actions">
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--small"
-                              onClick={() => item.setter("")}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="panel-section">
-                    <div className="link-options__header" style={{ alignItems: "flex-start" }}>
-                      <span className="field-label">Overlay image (optional)</span>
-                      <span className="muted small">
-                        Composites this on top of the selected photo when posting.
-                      </span>
-                    </div>
-                    <div className="link-option-row" style={{ alignItems: "center" }}>
-                      <input
-                        value={overlayUrl}
-                        onChange={(e) => setOverlayUrl(e.target.value)}
-                        placeholder="https://.../overlay.png or /uploads/overlay.png"
-                        style={{ flex: 1 }}
-                      />
-                      <div className="link-option-actions">
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--small"
-                          onClick={() => setOverlayUrl("")}
-                          disabled={!overlayUrl}
-                        >
-                          Clear
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--small"
-                          onClick={async () => {
-                            if (!uploadsInfo) await loadUploadsInfo();
-                            setMediaGalleryContext("overlay");
-                            setMediaGalleryOpen(true);
-                          }}
-                          disabled={!backendBase}
-                        >
-                          Pick from gallery
-                        </button>
-                      </div>
-                    </div>
-                    {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
-                      <div className="media-preview small-thumb">
-                        <div className="media-preview-thumb overlay-wrapper">
-                          <img
-                            src={resolveMediaPreviewUrl(mediaUrl || overlayUrl, backendBase)}
-                            alt="Base preview"
-                          />
-                          <img
-                            className="media-overlay-img"
-                            src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
-                            alt="Overlay preview"
-                          />
-                        </div>
-                        <div className="media-preview-meta">
-                          <div className="media-preview-title">Overlay preview</div>
-                          <div className="media-preview-url small">{overlayUrl}</div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  <p className="muted small">
-                    EXIF geo settings now live in Photo scheduler → Photo metadata. Regular posts don’t need geo tagging.
-                  </p>
-                </div>
-                <div className="panel-section">
-                  <label className="field-label">Photo URL</label>
-                  <input
-                    value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    placeholder="https://.../image.jpg  or  /uploads/image.jpg"
-                  />
-                  <div className="upload-row">
-                    <label className="btn btn--ghost upload-btn">
-                      Upload from my computer
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handlePhotoUpload}
-                        disabled={uploadingPhoto || !backendBase}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--small"
-                      onClick={async () => {
-                        if (!uploadsInfo) {
-                          await loadUploadsInfo();
-                        }
-                        setMediaGalleryContext("profile");
-                        setMediaGalleryOpen(true);
-                      }}
-                      disabled={!backendBase}
-                    >
-                      Browse gallery
-                    </button>
-                    <span className="muted small">
-                      {uploadingPhoto
-                        ? "Uploading..."
-                        : backendBase
-                        ? "Uploads live on your backend at /uploads."
-                        : "Resolving backend..."}
-                    </span>
-                  </div>
+              <ProfilesLinksPanel
+                cta={cta}
+                setCta={setCta}
+                ctaOptions={CTA_OPTIONS}
+                defaultPhone={defaultPhone}
+                setDefaultPhone={setDefaultPhone}
+                phoneCandidate={phoneCandidate}
+                linkUrl={linkUrl}
+                setLinkUrl={setLinkUrl}
+                linkOptions={linkOptions}
+                setLinkOptions={setLinkOptions}
+                linkOptionsSaving={linkOptionsSaving}
+                reviewLink={reviewLink}
+                setReviewLink={setReviewLink}
+                serviceAreaLink={serviceAreaLink}
+                setServiceAreaLink={setServiceAreaLink}
+                areaMapLink={areaMapLink}
+                setAreaMapLink={setAreaMapLink}
+                quickLinksSaving={quickLinksSaving}
+                quickLinksHelpOpen={quickLinksHelpOpen}
+                setQuickLinksHelpOpen={setQuickLinksHelpOpen}
+                handleQuickLinksAdd={handleQuickLinksAdd}
+                quickLinksAddDisabled={quickLinksAddDisabled}
+                overlayUrl={overlayUrl}
+                setOverlayUrl={setOverlayUrl}
+                backendBase={backendBase}
+                resolveMediaPreviewUrl={resolveMediaPreviewUrl}
+                mediaUrl={mediaUrl}
+                setMediaUrl={setMediaUrl}
+                composedMediaUrl={composedMediaUrl}
+                uploadsInfo={uploadsInfo}
+                loadUploadsInfo={loadUploadsInfo}
+                setMediaGalleryContext={setMediaGalleryContext}
+                setMediaGalleryOpen={setMediaGalleryOpen}
+                uploadingPhoto={uploadingPhoto}
+                handlePhotoUpload={handlePhotoUpload}
+                saveProfileDefaults={saveProfileDefaults}
+                hasProfile={!!selectedProfile}
+              />
 
-                  {resolveMediaPreviewUrl(mediaUrl, backendBase) ? (
-                    <div className="media-preview">
-                      <div className="media-preview-thumb overlay-wrapper">
-                        <img
-                          src={resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)}
-                          alt="Default media"
-                        />
-                        {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
-                          <img
-                            className="media-overlay-img"
-                            src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
-                            alt="Overlay"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="media-preview-meta">
-                        <div className="media-preview-title">Current default photo</div>
-                        <div className="media-preview-url small">
-                          {mediaUrl || "—"}
-                        </div>
-                        <div className="media-preview-hint muted small">
-                          This is the image that will be attached when you post from
-                          this profile (unless you override it per-post).
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="muted small" style={{ marginTop: 6 }}>
-                      No default photo set yet. Upload a file or pick one from the
-                      gallery.
-                    </p>
-                  )}
-                </div>
-                <div className="panel-section">
-                  <button
-                    className="btn btn--green full-width"
-                    onClick={saveProfileDefaults}
-                    disabled={!selectedProfile}
-                  >
-                    Save as profile defaults
-                  </button>
-                </div>
-              </section>
-
-              <section className="panel" ref={generateRef}>
-                <div className="panel-title">Generate & post</div>
-                <div className="panel-section action-row">
-                  <button className="btn btn--blue" onClick={doPreview} disabled={previewing}>
-                    {previewing ? (
-                      <span className="loading-dots">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                    ) : (
-                      "Generate preview"
-                    )}
-                  </button>
-                  <button
-                    className="btn btn--green"
-                    onClick={doPostNow}
-                    disabled={busy || posting}
-                  >
-                    {posting ? (
-                      <span className="loading-dots">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                    ) : postNowStatus === "posted" ? (
-                      "Posted!"
-                    ) : (
-                      "Post now"
-                    )}
-                  </button>
-                  <button
-                    className="btn btn--warning"
-                    onClick={doPostNowAll}
-                    disabled={busy}
-                  >
-                    Post all profiles
-                  </button>
-                  <button
-                    className="btn btn--danger"
-                    type="button"
-                    onClick={clearPostComposer}
-                    disabled={busy || posting}
-                  >
-                    Clear all
-                  </button>
-                </div>
-                <div className="panel-section">
-                  <label className="field-label">Schedule date/time</label>
-                  <div className="section-grid">
-                    <input
-                      type="date"
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                    />
-                    <input
-                      type="time"
-                      value={scheduleTime}
-                      onChange={(e) => setScheduleTime(e.target.value)}
-                    />
-                    <button
-                      className="btn btn--indigo"
-                      type="button"
-                      onClick={schedulePost}
-                      disabled={busy || posting || previewing}
-                    >
-                      {scheduleStatus === "scheduled"
-                        ? "Scheduled"
-                        : scheduleStatus === "updated"
-                        ? "Updated"
-                        : scheduleStatus === "error"
-                        ? "Retry"
-                        : "Schedule"}
-                    </button>
-                  </div>
-                  <p className="muted small">
-                    Pick a future date/time to queue this post for the selected profile. Click a scheduled row to load it for editing.
-                  </p>
-                  <div className="section-grid" style={{ alignItems: "end" }}>
-                    <div>
-                      <label className="field-label">Auto cadence</label>
-                      <select
-                        value={autoCadenceDays}
-                        onChange={(e) => setAutoCadenceDays(Number(e.target.value))}
-                      >
-                        <option value={1}>1 per day</option>
-                        <option value={2}>1 per 2 days</option>
-                        <option value={3}>1 per 3 days</option>
-                      </select>
-                    </div>
-                    <button
-                      className="btn btn--indigo"
-                      type="button"
-                      onClick={autoScheduleWithAi}
-                      disabled={bulkBusy || busy}
-                    >
-                      Auto schedule with AI
-                    </button>
-                  </div>
-                </div>
-                <div className="panel-section">
-                  <div className="section">
-                    <label className="field-label">Post type</label>
-                    <select
-                      value={postType}
-                      onChange={(e) => setPostType(e.target.value)}
-                    >
-                      {POST_TYPES.map((t) => (
-                        <option key={t.value} value={t.value}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {postType === "EVENT" && (
-                  <div className="panel-section">
-                    <div className="section-grid">
-                      <div className="section">
-                        <label className="field-label">Event title</label>
-                        <input
-                          value={eventTitle}
-                          onChange={(e) => setEventTitle(e.target.value)}
-                          placeholder="Spring Painting Promo Day"
-                        />
-                      </div>
-                      <div className="section">
-                        <label className="field-label">Event start (YYYY-MM-DD)</label>
-                        <input
-                          value={eventStart}
-                          onChange={(e) => setEventStart(e.target.value)}
-                          placeholder="2025-04-01"
-                        />
-                        <label className="field-label">Event end (YYYY-MM-DD)</label>
-                        <input
-                          value={eventEnd}
-                          onChange={(e) => setEventEnd(e.target.value)}
-                          placeholder="2025-04-07"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {postType === "OFFER" && (
-                  <div className="panel-section">
-                    <div className="section-grid">
-                      <div className="section">
-                        <label className="field-label">Offer title</label>
-                        <input
-                          value={offerTitle}
-                          onChange={(e) => setOfferTitle(e.target.value)}
-                          placeholder="10% off popcorn ceiling removal"
-                        />
-                      </div>
-                      <div className="section">
-                        <label className="field-label">Coupon code</label>
-                        <input
-                          value={offerCoupon}
-                          onChange={(e) => setOfferCoupon(e.target.value)}
-                          placeholder="SPRING10"
-                        />
-                      </div>
-                      <div className="section">
-                        <label className="field-label">Redeem URL (optional)</label>
-                        <input
-                          value={offerRedeemUrl}
-                          onChange={(e) => setOfferRedeemUrl(e.target.value)}
-                          placeholder="https://epfproservices.com/popcorn-ceiling-removal/mississauga/"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="panel-section">
-                  <label className="field-label">Post copy</label>
-                  <textarea
-                    value={postText}
-                    onChange={(e) => setPostText(e.target.value)}
-                    placeholder="Generated post will appear here. Edit freely before posting."
-                  />
-                  <p className="muted small">
-                    {preview
-                      ? "Preview generated. Edits here will be published."
-                      : "Tip: click Generate preview for AI assistance, or write your own copy."}
-                  </p>
-                </div>
-              </section>
+              <SchedulePanel
+                panelRef={generateRef}
+                onPreview={doPreview}
+                previewing={previewing}
+                onPostNow={doPostNow}
+                posting={posting}
+                postNowStatus={postNowStatus}
+                busy={busy}
+                onPostAll={doPostNowAll}
+                onClear={clearPostComposer}
+                scheduleDate={scheduleDate}
+                onChangeScheduleDate={setScheduleDate}
+                scheduleTime={scheduleTime}
+                onChangeScheduleTime={setScheduleTime}
+                onSchedule={schedulePost}
+                scheduleStatus={scheduleStatus}
+                autoCadenceDays={autoCadenceDays}
+                onChangeAutoCadence={setAutoCadenceDays}
+                onAutoScheduleWithAi={autoScheduleWithAi}
+                bulkBusy={bulkBusy}
+                postType={postType}
+                onChangePostType={setPostType}
+                postTypes={POST_TYPES}
+                eventTitle={eventTitle}
+                onChangeEventTitle={setEventTitle}
+                eventStart={eventStart}
+                onChangeEventStart={setEventStart}
+                eventEnd={eventEnd}
+                onChangeEventEnd={setEventEnd}
+                offerTitle={offerTitle}
+                onChangeOfferTitle={setOfferTitle}
+                offerCoupon={offerCoupon}
+                onChangeOfferCoupon={setOfferCoupon}
+                offerRedeemUrl={offerRedeemUrl}
+                onChangeOfferRedeemUrl={setOfferRedeemUrl}
+                postText={postText}
+                onChangePostText={setPostText}
+                preview={preview}
+              />
 
               <section className="panel">
                 <div className="panel-title">Last generated preview</div>
                 <div className="panel-section preview-shell">
                   {postText || preview ? (
-                    <div className="post-preview">
-                      {previewDetails?.profileId &&
-                        selectedId &&
-                        previewDetails.profileId !== selectedId && (
-                          <div className="preview-warning">
-                            <strong>Heads up:</strong> preview was generated for{" "}
-                            {previewDetails.profileName || previewDetails.profileId}.
-                            Select the right profile and click Generate preview again to refresh.
-                          </div>
-                        )}
-
-                      <div className="post-preview__header">
-                        <div>
-                          <div className="post-preview__eyebrow">Posting to</div>
-                          <div className="post-preview__profile">
-                            {previewDetails?.profileName ||
-                              selectedProfile?.businessName ||
-                              selectedId ||
-                              "—"}
-                            {selectedProfile?.city
-                              ? " · " + selectedProfile.city
-                              : ""}
-                          </div>
-                          {previewDetails?.neighbourhood ? (
-                            <div className="muted small">
-                              Focus area: {previewDetails.neighbourhood}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="post-preview__badge">
-                          {getPostTypeLabel(postType)}
-                        </div>
-                      </div>
-
-                      <div className="post-preview__copy">
-                        {(postText || preview || "").trim() || "—"}
-                      </div>
-
-                      <div className="post-preview__cta-row">
-                        <a
-                          className={
-                            "preview-cta-btn" +
-                            (resolveCtaLink(cta, linkUrl) ? "" : " is-disabled")
-                          }
-                          href={resolveCtaLink(cta, linkUrl) || undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => {
-                            if (!resolveCtaLink(cta, linkUrl)) e.preventDefault();
-                          }}
-                        >
-                          {CTA_LABELS[cta] || "CTA button"}
-                        </a>
-                        <div className="post-preview__meta">
-                          <div>
-                            Link:{" "}
-                            {linkUrl ? (
-                              resolveCtaLink(cta, linkUrl) ? (
-                                <a
-                                  href={resolveCtaLink(cta, linkUrl)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {linkUrl}
-                                </a>
-                              ) : (
-                                <span className="error-text">
-                                  {cta === "CALL_NOW"
-                                    ? "Use tel:+1... or https://"
-                                    : "Needs https:// link"}
-                                </span>
-                              )
-                            ) : (
-                              <span className="muted small">No link provided</span>
-                            )}
-                          </div>
-                          <div>
-                            Photo:{" "}
-                            {mediaUrl ? (
-                              <span className="muted small">{mediaUrl}</span>
-                            ) : (
-                              <span className="muted small">None attached</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {resolveMediaPreviewUrl(mediaUrl, backendBase) ? (
-                        <div className="post-preview__media">
-                          <div className="overlay-wrapper">
-                            <img
-                              src={resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)}
-                              alt="Post media preview"
-                              onClick={() =>
-                                setLightboxSrc(
-                                  resolveMediaPreviewUrl(composedMediaUrl || mediaUrl, backendBase)
-                                )
-                              }
-                              style={{ cursor: "pointer" }}
-                            />
-                            {resolveMediaPreviewUrl(overlayUrl, backendBase) ? (
-                              <img
-                                className="media-overlay-img"
-                                src={resolveMediaPreviewUrl(overlayUrl, backendBase)}
-                                alt="Overlay"
-                              />
-                            ) : null}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="post-preview__footer muted small">
-                        {previewDetails?.generatedAt ? (
-                          <>
-                            Generated{" "}
-                            {new Date(previewDetails.generatedAt).toLocaleString()}
-                          </>
-                        ) : (
-                          "Live preview reflects the text and CTA above."
-                        )}
-                      </div>
-                    </div>
+                    <PostPreview
+                      profileName={previewProfileName}
+                      profileCity={previewProfileCity}
+                      focusArea={previewFocusArea}
+                      badgeLabel={getPostTypeLabel(postType)}
+                      warning={previewWarning}
+                      bodyText={previewBodyText}
+                      ctaLabel={CTA_LABELS[cta] || "CTA button"}
+                      ctaHref={previewCtaHref}
+                      ctaDisabled={!previewCtaHref}
+                      metaRows={previewMetaRows}
+                      mediaUrl={previewMediaPreviewUrl}
+                      overlayUrl={previewOverlayPreviewUrl}
+                      onMediaClick={handlePreviewMediaClick}
+                      footerText={previewFooterText}
+                    />
                   ) : (
                     <div className="muted small">
                       No preview yet. Click "Generate preview" to see AI output.
@@ -3469,15 +3279,21 @@ export default function App() {
                 <div className="panel-section stats-grid">
                   <div>
                     <div className="muted small">Enabled</div>
-                    <strong>{schedStatus && schedStatus.enabled ? "Yes" : "No"}</strong>
+                    <strong>
+                      {schedStatus && schedStatus.enabled ? "Yes" : "No"}
+                    </strong>
                   </div>
                   <div>
                     <div className="muted small">Default time</div>
-                    <strong>{(schedStatus && schedStatus.defaultTime) || "10:00"}</strong>
+                    <strong>
+                      {(schedStatus && schedStatus.defaultTime) || "10:00"}
+                    </strong>
                   </div>
                   <div>
                     <div className="muted small">Tick</div>
-                    <strong>{(schedStatus && schedStatus.tickSeconds) || 30}s</strong>
+                    <strong>
+                      {(schedStatus && schedStatus.tickSeconds) || 30}s
+                    </strong>
                   </div>
                 </div>
 
@@ -3541,7 +3357,9 @@ export default function App() {
 
                   <div className="form-grid">
                     <div>
-                      <label className="field-label">Default time (HH:MM)</label>
+                      <label className="field-label">
+                        Default time (HH:MM)
+                      </label>
                       <input
                         name="defaultTime"
                         defaultValue={
@@ -3580,7 +3398,11 @@ export default function App() {
                   </div>
 
                   <div className="action-row">
-                    <button className="btn btn--green" disabled={busy} type="submit">
+                    <button
+                      className="btn btn--green"
+                      disabled={busy}
+                      type="submit"
+                    >
                       Save config
                     </button>
                     <button
@@ -3608,19 +3430,20 @@ export default function App() {
                     placeholder="/uploads/photo.jpg or https://..."
                   />
                   <p className="muted small">
-                    You can add up to 100 photos: pick multiple in the gallery or paste them below.
+                    You can add up to 100 photos: pick multiple in the gallery
+                    or paste them below.
                   </p>
                   <div className="action-row">
-              <label className="btn btn--ghost btn--small upload-btn">
-                Upload with EXIF
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleSchedulerPhotoUpload}
-                  disabled={uploadingPhoto || !backendBase}
-                />
-              </label>
+                    <label className="btn btn--ghost btn--small upload-btn">
+                      Upload with EXIF
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleSchedulerPhotoUpload}
+                        disabled={uploadingPhoto || !backendBase}
+                      />
+                    </label>
                     <button
                       className="btn btn--ghost btn--small"
                       type="button"
@@ -3628,14 +3451,18 @@ export default function App() {
                         const val = photoSchedMedia.trim();
                         if (!val) return;
                         setPhotoSchedMediaList((prev) =>
-                          prev.includes(val) ? prev : [...prev, val].slice(0, 100)
+                          prev.includes(val)
+                            ? prev
+                            : [...prev, val].slice(0, 100)
                         );
                         setPhotoSchedMedia("");
                       }}
                     >
                       Add to list
                     </button>
-                    <span className="muted small">{photoSchedMediaList.length} in list</span>
+                    <span className="muted small">
+                      {photoSchedMediaList.length} in list
+                    </span>
                   </div>
                   {photoSchedMediaList.length > 0 && (
                     <div className="chip-list">
@@ -3686,9 +3513,12 @@ export default function App() {
                 </div>
                 <div className="panel-section">
                   <div className="panel-subsection__header">
-                    <span className="field-label">Photo metadata (used for EXIF & scheduling)</span>
+                    <span className="field-label">
+                      Photo metadata (used for EXIF & scheduling)
+                    </span>
                     <span className="muted small">
-                      Auto-randomizes neighbourhood + coordinates per photo if enabled below.
+                      Auto-randomizes neighbourhood + coordinates per photo if
+                      enabled below.
                     </span>
                   </div>
                   <div className="section-grid">
@@ -3719,7 +3549,9 @@ export default function App() {
                   </div>
                   <div className="section-grid">
                     <div className="section">
-                      <label className="field-label">Neighbourhood (fallback)</label>
+                      <label className="field-label">
+                        Neighbourhood (fallback)
+                      </label>
                       <input
                         value={photoNeighbourhood}
                         onChange={(e) => setPhotoNeighbourhood(e.target.value)}
@@ -3727,10 +3559,14 @@ export default function App() {
                       />
                     </div>
                     <div className="section">
-                      <label className="field-label">Neighbourhood list (random pick)</label>
+                      <label className="field-label">
+                        Neighbourhood list (random pick)
+                      </label>
                       <textarea
                         value={photoNeighbourhoodsInput}
-                        onChange={(e) => setPhotoNeighbourhoodsInput(e.target.value)}
+                        onChange={(e) =>
+                          setPhotoNeighbourhoodsInput(e.target.value)
+                        }
                         placeholder="Kensington\nMount Pleasant\nDowntown"
                         rows={3}
                       />
@@ -3739,7 +3575,8 @@ export default function App() {
                           className="btn btn--ghost btn--small"
                           type="button"
                           onClick={() => {
-                            const city = photoCity || selectedProfile?.city || "";
+                            const city =
+                              photoCity || selectedProfile?.city || "";
                             if (!city) {
                               notify("Set a city first.");
                               return;
@@ -3747,10 +3584,13 @@ export default function App() {
                             generateNeighbourhoods(city);
                           }}
                         >
-                          {neighbourhoodsLoading ? "Loading..." : "Generate from map"}
+                          {neighbourhoodsLoading
+                            ? "Loading..."
+                            : "Generate from map"}
                         </button>
                         <span className="muted small">
-                          Pulls neighbourhoods/streets near the city and your lat/lng (30km filter).
+                          Pulls neighbourhoods/streets near the city and your
+                          lat/lng (30km filter).
                         </span>
                       </div>
                     </div>
@@ -3771,29 +3611,43 @@ export default function App() {
                         onChange={(e) => setPhotoCategories(e.target.value)}
                         placeholder="painting contractor, drywall finishing"
                       />
-                      <label className="checkbox-inline" style={{ marginTop: 6 }}>
+                      <label
+                        className="checkbox-inline"
+                        style={{ marginTop: 6 }}
+                      >
                         <input
                           type="checkbox"
                           checked={photoRandomizeKeywords}
-                          onChange={(e) => setPhotoRandomizeKeywords(e.target.checked)}
+                          onChange={(e) =>
+                            setPhotoRandomizeKeywords(e.target.checked)
+                          }
                         />
                         Randomize keywords per photo
                       </label>
                     </div>
                     <div className="section">
-                      <label className="field-label">Jitter radius (meters)</label>
+                      <label className="field-label">
+                        Jitter radius (meters)
+                      </label>
                       <input
                         type="number"
                         min="0"
                         value={photoRandomizeRadius}
-                        onChange={(e) => setPhotoRandomizeRadius(Number(e.target.value))}
+                        onChange={(e) =>
+                          setPhotoRandomizeRadius(Number(e.target.value))
+                        }
                         placeholder="200"
                       />
-                      <label className="checkbox-inline" style={{ marginTop: 6 }}>
+                      <label
+                        className="checkbox-inline"
+                        style={{ marginTop: 6 }}
+                      >
                         <input
                           type="checkbox"
                           checked={photoRandomizeCoords}
-                          onChange={(e) => setPhotoRandomizeCoords(e.target.checked)}
+                          onChange={(e) =>
+                            setPhotoRandomizeCoords(e.target.checked)
+                          }
                         />
                         Auto-randomize coordinates
                       </label>
@@ -3805,25 +3659,34 @@ export default function App() {
                         min="5"
                         max="50"
                         value={photoSearchRadius}
-                        onChange={(e) => setPhotoSearchRadius(Number(e.target.value) || 20)}
+                        onChange={(e) =>
+                          setPhotoSearchRadius(Number(e.target.value) || 20)
+                        }
                         placeholder="20"
                       />
                       <div className="muted small">
-                        Higher radius pulls more GTA areas; lower radius keeps it local.
+                        Higher radius pulls more GTA areas; lower radius keeps
+                        it local.
                       </div>
                     </div>
                   </div>
                   <div className="section-grid" style={{ alignItems: "start" }}>
                     <div>
                       <div className="muted small">City</div>
-                      <strong>{photoMetaSample?.city || photoCity || selectedProfile?.city || "—"}</strong>
+                      <strong>
+                        {photoMetaSample?.city ||
+                          photoCity ||
+                          selectedProfile?.city ||
+                          "—"}
+                      </strong>
                     </div>
                     <div>
                       <div className="muted small">Neighbourhood (next)</div>
                       <strong>
                         {photoMetaSample?.neighbourhood ||
                           photoNeighbourhood ||
-                          (photoNeighbourhoodOptions[0] || "—")}
+                          photoNeighbourhoodOptions[0] ||
+                          "—"}
                       </strong>
                     </div>
                     <div>
@@ -3841,7 +3704,9 @@ export default function App() {
                       <div className="muted small">GPS (next)</div>
                       <strong>
                         {photoMetaSample
-                          ? `${photoMetaSample.lat || "—"}, ${photoMetaSample.lng || "—"}`
+                          ? `${photoMetaSample.lat || "—"}, ${
+                              photoMetaSample.lng || "—"
+                            }`
                           : "—"}
                       </strong>
                     </div>
@@ -3849,20 +3714,26 @@ export default function App() {
                       <div className="muted small">Neighbourhood pool</div>
                       <div className="muted small" style={{ maxWidth: 220 }}>
                         {neighbourhoodOptionsDetailed.length
-                          ? neighbourhoodOptionsDetailed.map((n) => n.name).join(", ")
+                          ? neighbourhoodOptionsDetailed
+                              .map((n) => n.name)
+                              .join(", ")
                           : "None set. Using fallback above."}
                       </div>
                     </div>
                   </div>
                   <div className="section-grid">
                     <div className="section">
-                      <label className="field-label">Pick neighbourhood (sets coords)</label>
+                      <label className="field-label">
+                        Pick neighbourhood (sets coords)
+                      </label>
                       <select
                         value=""
                         onChange={(e) => {
                           const v = e.target.value;
                           if (!v) return;
-                          const found = neighbourhoodOptionsDetailed.find((n) => n.name === v);
+                          const found = neighbourhoodOptionsDetailed.find(
+                            (n) => n.name === v
+                          );
                           setPhotoNeighbourhood(v);
                           if (found && found.lat != null && found.lng != null) {
                             setPhotoLat(String(found.lat));
@@ -3870,7 +3741,9 @@ export default function App() {
                             setPhotoRandomizeCoords(true);
                             logGeo("Neighbourhood selected", found);
                           } else {
-                            logGeo("Neighbourhood selected (no coords)", { name: v });
+                            logGeo("Neighbourhood selected (no coords)", {
+                              name: v,
+                            });
                           }
                           refreshPhotoMetaSample();
                         }}
@@ -3880,19 +3753,24 @@ export default function App() {
                           <option key={idx} value={opt.name}>
                             {opt.name}
                             {opt.lat != null && opt.lng != null
-                              ? ` (${opt.lat.toFixed(4)}, ${opt.lng.toFixed(4)})`
+                              ? ` (${opt.lat.toFixed(4)}, ${opt.lng.toFixed(
+                                  4
+                                )})`
                               : ""}
                           </option>
                         ))}
                       </select>
                       <div className="muted small">
-                        Selecting applies the neighbourhood and sets base coords (if present), ready for posting.
+                        Selecting applies the neighbourhood and sets base coords
+                        (if present), ready for posting.
                       </div>
                     </div>
                   </div>
                   <div className="panel-subsection" style={{ marginTop: 12 }}>
                     <div className="panel-subsection__header">
-                      <span className="field-label">Jitter preview (next 3)</span>
+                      <span className="field-label">
+                        Jitter preview (next 3)
+                      </span>
                       <span className="muted small">
                         Shows how coords and neighbourhood rotate for SEO.
                       </span>
@@ -3908,7 +3786,7 @@ export default function App() {
                           border: "1px solid #e0e0e0",
                           borderRadius: 6,
                           overflow: "hidden",
-                          cursor: "crosshair"
+                          cursor: "crosshair",
                         }}
                         onClick={(e) => {
                           const bounds = mapBoundsRef.current;
@@ -3933,14 +3811,22 @@ export default function App() {
                           <iframe
                             title="Map preview"
                             src={mapEmbedUrl}
-                            style={{ width: "100%", height: 420, border: "none" }}
+                            style={{
+                              width: "100%",
+                              height: 420,
+                              border: "none",
+                            }}
                             loading="lazy"
                           />
                         ) : mapPreviewUrl ? (
                           <img
                             src={mapPreviewUrl}
                             alt="Map preview"
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                            }}
                           />
                         ) : (
                           <div
@@ -3952,16 +3838,29 @@ export default function App() {
                         )}
                       </div>
                       <div className="muted small">
-                        Map centers on the current base coords; click on the map to set lat/lng. Jitter will vary around this point.
+                        Map centers on the current base coords; click on the map
+                        to set lat/lng. Jitter will vary around this point.
                       </div>
                     </div>
                     {geoTestSamples.length ? (
-                      <div className="muted small" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                      <div
+                        className="muted small"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: 8,
+                        }}
+                      >
                         {geoTestSamples.map((s, idx) => (
                           <div key={idx} className="diag-card">
-                            <div><strong>{s.city || "—"}</strong></div>
+                            <div>
+                              <strong>{s.city || "—"}</strong>
+                            </div>
                             <div>{s.neighbourhood || "—"}</div>
-                            <div>{s.lat || "—"}, {s.lng || "—"}</div>
+                            <div>
+                              {s.lat || "—"}, {s.lng || "—"}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -3994,7 +3893,13 @@ export default function App() {
                         }
                         const samples = [];
                         for (let i = 0; i < 5; i++) {
-                          samples.push(randomizeCoords(photoLat, photoLng, photoRandomizeRadius));
+                          samples.push(
+                            randomizeCoords(
+                              photoLat,
+                              photoLng,
+                              photoRandomizeRadius
+                            )
+                          );
                         }
                         logGeo("Jitter coords test", samples);
                       }}
@@ -4028,7 +3933,10 @@ export default function App() {
                           return;
                         }
                         setPhotoNeighbourhood(
-                          randomNeighbourhood(photoNeighbourhoodOptions, photoNeighbourhood)
+                          randomNeighbourhood(
+                            photoNeighbourhoodOptions,
+                            photoNeighbourhood
+                          )
                         );
                         refreshPhotoMetaSample();
                       }}
@@ -4053,14 +3961,16 @@ export default function App() {
                     </button>
                   </div>
                   <p className="muted small">
-                    City/lat/lng, neighbourhoods, and keywords live here. Save defaults to keep them tied to the profile; scheduler will stamp EXIF automatically.
+                    City/lat/lng, neighbourhoods, and keywords live here. Save
+                    defaults to keep them tied to the profile; scheduler will
+                    stamp EXIF automatically.
                   </p>
                 </div>
-                  <div className="panel-section two-col">
-                    <label className="field-label">Start date</label>
-                    <input
-                      type="date"
-                      value={photoSchedDate}
+                <div className="panel-section two-col">
+                  <label className="field-label">Start date</label>
+                  <input
+                    type="date"
+                    value={photoSchedDate}
                     onChange={(e) => setPhotoSchedDate(e.target.value)}
                   />
                   <label className="field-label">Start time</label>
@@ -4073,14 +3983,22 @@ export default function App() {
                 <div className="panel-section diag-shell">
                   <div className="panel-subsection__header">
                     <span className="field-label">Geo logs (latest first)</span>
-                    <span className="muted small">Up to 30 entries; also in console with [geo].</span>
+                    <span className="muted small">
+                      Up to 30 entries; also in console with [geo].
+                    </span>
                   </div>
                   {geoLogs.length ? (
-                    <ul className="muted small" style={{ maxHeight: 220, overflowY: "auto" }}>
+                    <ul
+                      className="muted small"
+                      style={{ maxHeight: 220, overflowY: "auto" }}
+                    >
                       {geoLogs.map((l, idx) => (
                         <li key={idx} style={{ marginBottom: 6 }}>
                           <div>
-                            <strong>{new Date(l.ts).toLocaleTimeString()}</strong> — {l.msg}
+                            <strong>
+                              {new Date(l.ts).toLocaleTimeString()}
+                            </strong>{" "}
+                            — {l.msg}
                           </div>
                           {l.data ? (
                             <div style={{ fontSize: "0.9em", opacity: 0.8 }}>
@@ -4095,74 +4013,94 @@ export default function App() {
                   )}
                 </div>
                 <div className="panel-section two-col">
-                    <label className="field-label">Cadence</label>
-                    <select
-                      value={photoSchedCadence}
-                      onChange={(e) => setPhotoSchedCadence(e.target.value)}
-                    >
+                  <label className="field-label">Cadence</label>
+                  <select
+                    value={photoSchedCadence}
+                    onChange={(e) => setPhotoSchedCadence(e.target.value)}
+                  >
                     <option value="DAILY1">Daily</option>
                     <option value="DAILY2">Every 2 days</option>
                     <option value="DAILY3">Every 3 days</option>
                   </select>
-                    <label className="field-label">Count</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={photoSchedCount}
-                      onChange={(e) => setPhotoSchedCount(e.target.value)}
-                    />
-                  </div>
-                  <div className="panel-section">
-                    <button
-                      className="btn btn--green"
-                      type="button"
-                      onClick={schedulePhotosBulk}
-                      disabled={!selectedProfile || schedulingBusy}
-                    >
-                      {photoSchedulerStatus === "saving" || photoSchedulerStatus === "stamping"
-                        ? "Working..."
-                        : schedulingBusy
-                        ? "Working..."
-                        : "Schedule photos"}
-                    </button>
-                    <button
-                      className="btn btn--indigo"
-                      type="button"
-                      onClick={postPhotoNow}
-                      disabled={!selectedProfile || schedulingBusy}
-                      style={{ marginLeft: 8 }}
-                    >
-                      {photoSchedulerStatus === "posting" ? "Posting..." : "Post photo now"}
-                    </button>
+                  <label className="field-label">Count</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={photoSchedCount}
+                    onChange={(e) => setPhotoSchedCount(e.target.value)}
+                  />
+                </div>
+                <div className="panel-section">
+                  <button
+                    className="btn btn--green"
+                    type="button"
+                    onClick={schedulePhotosBulk}
+                    disabled={!selectedProfile || schedulingBusy}
+                  >
+                    {photoSchedulerStatus === "saving" ||
+                    photoSchedulerStatus === "stamping"
+                      ? "Working..."
+                      : schedulingBusy
+                      ? "Working..."
+                      : "Schedule photos"}
+                  </button>
+                  <button
+                    className="btn btn--indigo"
+                    type="button"
+                    onClick={postPhotoNow}
+                    disabled={!selectedProfile || schedulingBusy}
+                    style={{ marginLeft: 8 }}
+                  >
+                    {photoSchedulerStatus === "posting"
+                      ? "Posting..."
+                      : "Post photo now"}
+                  </button>
                   {editingPhotoJobId ? (
                     <button
                       className="btn btn--indigo"
                       type="button"
                       onClick={updateSelectedPhotoJob}
-                      disabled={!selectedProfile || photoSchedulerStatus === "saving"}
+                      disabled={
+                        !selectedProfile || photoSchedulerStatus === "saving"
+                      }
                       style={{ marginLeft: 8 }}
                     >
-                      {photoSchedulerStatus === "saving" ? "Updating..." : "Update selected photo"}
+                      {photoSchedulerStatus === "saving"
+                        ? "Updating..."
+                        : "Update selected photo"}
                     </button>
                   ) : null}
                   <p className="muted small">
-                    Uses the photo metadata defaults (lat/lng, neighbourhood, keywords) for EXIF stamping already embedded when the photo was uploaded.
+                    Uses the photo metadata defaults (lat/lng, neighbourhood,
+                    keywords) for EXIF stamping already embedded when the photo
+                    was uploaded.
                   </p>
                 </div>
                 {photoPreviewMedia ? (
                   <div className="panel-section">
-                    <div className="panel-subtitle">Preview (next scheduled photo)</div>
-                    <div className="post-preview__media" style={{ maxWidth: 360 }}>
+                    <div className="panel-subtitle">
+                      Preview (next scheduled photo)
+                    </div>
+                    <div
+                      className="post-preview__media"
+                      style={{ maxWidth: 360 }}
+                    >
                       <img src={photoPreviewMedia} alt="Photo preview" />
                     </div>
                     <div className="muted small" style={{ marginTop: 6 }}>
-                      <div><strong>Caption:</strong> {photoPreviewCaption}</div>
                       <div>
-                        <strong>Coords:</strong> {(photoLat || "—") + ", " + (photoLng || "—")}
+                        <strong>Caption:</strong> {photoPreviewCaption}
                       </div>
                       <div>
-                        <strong>Neighbourhood:</strong> {photoNeighbourhood || photoNeighbourhoodOptions[0] || "—"}
+                        <strong>Coords:</strong>{" "}
+                        {(photoLat || "—") + ", " + (photoLng || "—")}
+                      </div>
+                      <div>
+                        <strong>Neighbourhood:</strong>{" "}
+                        {photoNeighbourhood ||
+                          photoNeighbourhoodOptions[0] ||
+                          "—"}
                       </div>
                     </div>
                     <div className="action-row" style={{ marginTop: 8 }}>
@@ -4172,7 +4110,9 @@ export default function App() {
                         onClick={fetchLatestPhotos}
                         disabled={!selectedProfile || latestPhotosLoading}
                       >
-                        {latestPhotosLoading ? "Loading GBP photos..." : "View latest GBP photos"}
+                        {latestPhotosLoading
+                          ? "Loading GBP photos..."
+                          : "View latest GBP photos"}
                       </button>
                       <button
                         className="btn btn--ghost btn--small"
@@ -4180,22 +4120,41 @@ export default function App() {
                         onClick={fetchLatestPhotosDebug}
                         disabled={!selectedProfile || latestPhotosDebugLoading}
                       >
-                        {latestPhotosDebugLoading ? "Diagnostics: loading..." : "Diagnostics: multi-page fetch"}
+                        {latestPhotosDebugLoading
+                          ? "Diagnostics: loading..."
+                          : "Diagnostics: multi-page fetch"}
                       </button>
                     </div>
                     {latestPhotos.length > 0 ? (
                       <div className="media-strip">
                         {latestPhotos.map((item, idx) => (
-                          <div key={item.name || idx} className="media-strip__item">
+                          <div
+                            key={item.name || idx}
+                            className="media-strip__item"
+                          >
                             <img
-                              src={(item.mediaFormat === "PHOTO" && item.sourceUrl) || item.thumbnailUrl || item.googleUrl || ""}
+                              src={
+                                (item.mediaFormat === "PHOTO" &&
+                                  item.sourceUrl) ||
+                                item.thumbnailUrl ||
+                                item.googleUrl ||
+                                ""
+                              }
                               alt={item.description || item.name || ""}
-                              style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
+                              style={{
+                                width: 140,
+                                height: 140,
+                                objectFit: "cover",
+                                borderRadius: 6,
+                              }}
                               onError={(e) => {
                                 e.currentTarget.style.display = "none";
                               }}
                             />
-                            <div className="muted small" style={{ marginTop: 4 }}>
+                            <div
+                              className="muted small"
+                              style={{ marginTop: 4 }}
+                            >
                               {item.description || "—"}
                             </div>
                           </div>
@@ -4204,19 +4163,37 @@ export default function App() {
                     ) : null}
                     {latestPhotosDebug.length > 0 ? (
                       <div style={{ marginTop: 10 }}>
-                        <div className="muted small">Diagnostics (raw Google media, multi-page)</div>
+                        <div className="muted small">
+                          Diagnostics (raw Google media, multi-page)
+                        </div>
                         <div className="media-strip">
                           {latestPhotosDebug.map((item, idx) => (
-                            <div key={item.name || idx} className="media-strip__item">
+                            <div
+                              key={item.name || idx}
+                              className="media-strip__item"
+                            >
                               <img
-                                src={item.googleUrl || item.thumbnailUrl || item.sourceUrl || ""}
+                                src={
+                                  item.googleUrl ||
+                                  item.thumbnailUrl ||
+                                  item.sourceUrl ||
+                                  ""
+                                }
                                 alt={item.description || item.name || ""}
-                                style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
+                                style={{
+                                  width: 140,
+                                  height: 140,
+                                  objectFit: "cover",
+                                  borderRadius: 6,
+                                }}
                                 onError={(e) => {
                                   e.currentTarget.style.display = "none";
                                 }}
                               />
-                              <div className="muted small" style={{ marginTop: 4 }}>
+                              <div
+                                className="muted small"
+                                style={{ marginTop: 4 }}
+                              >
                                 {item.description || "—"}
                               </div>
                             </div>
@@ -4227,24 +4204,35 @@ export default function App() {
                   </div>
                 ) : null}
                 {photoSelectionPreview.length > 1 ? (
-                    <div className="panel-section">
-                      <div className="panel-subtitle">Selected photos (with randomized coords)</div>
-                      <div className="media-strip">
-                        {photoSelectionPreview.map((item, idx) => (
-                          <div key={idx} className="media-strip__item">
-                            <img
-                              src={resolveMediaPreviewUrl(item.media, backendBase)}
-                              alt={item.meta?.neighbourhood || ""}
-                              style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 6 }}
-                              onError={(e) => {
-                                e.currentTarget.style.display = "none";
-                              }}
-                            />
-                            <div className="muted small" style={{ marginTop: 4 }}>
+                  <div className="panel-section">
+                    <div className="panel-subtitle">
+                      Selected photos (with randomized coords)
+                    </div>
+                    <div className="media-strip">
+                      {photoSelectionPreview.map((item, idx) => (
+                        <div key={idx} className="media-strip__item">
+                          <img
+                            src={resolveMediaPreviewUrl(
+                              item.media,
+                              backendBase
+                            )}
+                            alt={item.meta?.neighbourhood || ""}
+                            style={{
+                              width: 140,
+                              height: 140,
+                              objectFit: "cover",
+                              borderRadius: 6,
+                            }}
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                          <div className="muted small" style={{ marginTop: 4 }}>
                             {item.caption}
                           </div>
                           <div className="muted small">
-                            {item.meta?.neighbourhood || "—"} · {item.meta?.city || "—"}
+                            {item.meta?.neighbourhood || "—"} ·{" "}
+                            {item.meta?.city || "—"}
                           </div>
                           <div className="muted small">
                             {item.meta?.lat || "—"}, {item.meta?.lng || "—"}
@@ -4253,7 +4241,8 @@ export default function App() {
                       ))}
                     </div>
                     <div className="muted small">
-                      Coords/neighbourhoods are randomized per photo; scheduling will use these values when stamping EXIF.
+                      Coords/neighbourhoods are randomized per photo; scheduling
+                      will use these values when stamping EXIF.
                     </div>
                   </div>
                 ) : null}
@@ -4281,12 +4270,20 @@ export default function App() {
                         {photoJobs.map((it) => (
                           <tr key={it.id}>
                             <td>{new Date(it.runAt).toLocaleString()}</td>
-                            <td>{selectedProfile?.businessName || it.profileId}</td>
-                            <td className="muted small">{it.body?.mediaUrl || "—"}</td>
+                            <td>
+                              {selectedProfile?.businessName || it.profileId}
+                            </td>
                             <td className="muted small">
-                              {it.body?.meta?.city || it.body?.meta?.neighbourhood
+                              {it.body?.mediaUrl || "—"}
+                            </td>
+                            <td className="muted small">
+                              {it.body?.meta?.city ||
+                              it.body?.meta?.neighbourhood
                                 ? `${it.body?.meta?.city || ""}${
-                                    it.body?.meta?.city && it.body?.meta?.neighbourhood ? " · " : ""
+                                    it.body?.meta?.city &&
+                                    it.body?.meta?.neighbourhood
+                                      ? " · "
+                                      : ""
                                   }${it.body?.meta?.neighbourhood || ""}`
                                 : "—"}
                             </td>
@@ -4298,7 +4295,10 @@ export default function App() {
                                 </div>
                               ) : null}
                               {it.lastError ? (
-                                <div className="error-text small" title={it.lastError}>
+                                <div
+                                  className="error-text small"
+                                  title={it.lastError}
+                                >
                                   {String(it.lastError).slice(0, 60)}
                                   {String(it.lastError).length > 60 ? "…" : ""}
                                 </div>
@@ -4344,21 +4344,32 @@ export default function App() {
                                 </div>
                               ) : null}
                               {it.lastError ? (
-                                <div className="error-text small" title={it.lastError}>
+                                <div
+                                  className="error-text small"
+                                  title={it.lastError}
+                                >
                                   {String(it.lastError).slice(0, 60)}
                                   {String(it.lastError).length > 60 ? "…" : ""}
                                 </div>
                               ) : null}
                             </td>
-                            <td>{selectedProfile?.businessName || it.profileId}</td>
+                            <td>
+                              {selectedProfile?.businessName || it.profileId}
+                            </td>
                             <td className="muted small">
-                              {it.body?.meta?.city || it.body?.meta?.neighbourhood
+                              {it.body?.meta?.city ||
+                              it.body?.meta?.neighbourhood
                                 ? `${it.body?.meta?.city || ""}${
-                                    it.body?.meta?.city && it.body?.meta?.neighbourhood ? " · " : ""
+                                    it.body?.meta?.city &&
+                                    it.body?.meta?.neighbourhood
+                                      ? " · "
+                                      : ""
                                   }${it.body?.meta?.neighbourhood || ""}`
                                 : "—"}
                             </td>
-                            <td className="muted small">{it.body?.mediaUrl || "—"}</td>
+                            <td className="muted small">
+                              {it.body?.mediaUrl || "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -4374,7 +4385,9 @@ export default function App() {
                         if (!job) return;
                         setEditingPhotoJobId(job.id);
                         setPhotoSchedMedia(job.body?.mediaUrl || "");
-                        setPhotoSchedMediaList(job.body?.mediaUrl ? [job.body.mediaUrl] : []);
+                        setPhotoSchedMediaList(
+                          job.body?.mediaUrl ? [job.body.mediaUrl] : []
+                        );
                         setPhotoSchedCaption(job.body?.caption || "");
                         setPhotoSchedDate(job.runAt.slice(0, 10));
                         setPhotoSchedTime(job.runAt.slice(11, 16));
@@ -4382,8 +4395,11 @@ export default function App() {
                         if (meta.lat) setPhotoLat(String(meta.lat));
                         if (meta.lng) setPhotoLng(String(meta.lng));
                         if (meta.city) setPhotoCity(String(meta.city));
-                        if (meta.neighbourhood) setPhotoNeighbourhood(String(meta.neighbourhood));
-                        notify("Loaded scheduled photo. Adjust fields and click Update selected photo.");
+                        if (meta.neighbourhood)
+                          setPhotoNeighbourhood(String(meta.neighbourhood));
+                        notify(
+                          "Loaded scheduled photo. Adjust fields and click Update selected photo."
+                        );
                       }}
                     />
                   </div>
@@ -4402,7 +4418,11 @@ export default function App() {
                     {cycleLoading ? (
                       <div className="muted small">Loading…</div>
                     ) : cycleInfo?.lastUrl ? (
-                      <a href={cycleInfo.lastUrl} target="_blank" rel="noreferrer">
+                      <a
+                        href={cycleInfo.lastUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         {cycleInfo.lastUrl}
                       </a>
                     ) : (
@@ -4449,13 +4469,17 @@ export default function App() {
                       </thead>
                       <tbody>
                         {scheduledPosts.map((it) => (
-                          <tr
-                            key={it.id}
-                          >
+                          <tr key={it.id}>
                             <td>{new Date(it.runAt).toLocaleString()}</td>
-                            <td>{selectedProfile?.businessName || it.profileId}</td>
+                            <td>
+                              {selectedProfile?.businessName || it.profileId}
+                            </td>
                             <td>{it.body?.cta || "—"}</td>
-                            <td>{editingScheduledId === it.id ? "Editing" : "Queued"}</td>
+                            <td>
+                              {editingScheduledId === it.id
+                                ? "Editing"
+                                : "Queued"}
+                            </td>
                             <td>
                               <div className="action-row">
                                 <button
@@ -4472,9 +4496,13 @@ export default function App() {
                                       setMediaUrl(it.body.mediaUrl || "");
                                     }
                                     if (generateRef.current) {
-                                      generateRef.current.scrollIntoView({ behavior: "smooth" });
+                                      generateRef.current.scrollIntoView({
+                                        behavior: "smooth",
+                                      });
                                     }
-                                    notify("Loaded scheduled post into composer. Save by updating date/time and clicking Schedule or Post now.");
+                                    notify(
+                                      "Loaded scheduled post into composer. Save by updating date/time and clicking Schedule or Post now."
+                                    );
                                   }}
                                 >
                                   Edit
@@ -4485,7 +4513,9 @@ export default function App() {
                                   onClick={() => deleteScheduled(it.id)}
                                   disabled={deletingScheduledId === it.id}
                                 >
-                                  {deletingScheduledId === it.id ? "Deleting..." : "Delete"}
+                                  {deletingScheduledId === it.id
+                                    ? "Deleting..."
+                                    : "Delete"}
                                 </button>
                               </div>
                             </td>
@@ -4548,7 +4578,9 @@ export default function App() {
                               e.currentTarget.style.display = "none";
                             }}
                             onClick={() =>
-                              setLightboxSrc(resolveMediaPreviewUrl(src, backendBase))
+                              setLightboxSrc(
+                                resolveMediaPreviewUrl(src, backendBase)
+                              )
                             }
                             style={{ cursor: "pointer" }}
                           />
@@ -4601,7 +4633,9 @@ export default function App() {
                       />
                     )}
                   </div>
-                  <label className="field-label">Auto-generate text per image</label>
+                  <label className="field-label">
+                    Auto-generate text per image
+                  </label>
                   <label className="checkbox-inline">
                     <input
                       type="checkbox"
@@ -4633,395 +4667,73 @@ export default function App() {
                   {bulkDrafts.length === 0 ? (
                     <div className="muted small">No drafts yet.</div>
                   ) : (
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>When</th>
-                          <th>CTA</th>
-                          <th>Link</th>
-                          <th>Media</th>
-                          <th>Copy</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bulkDrafts.map((d, idx) => (
-                          <tr key={d.id || idx}>
-                            <td>
-                              <input
-                                type="datetime-local"
-                                value={d.runAt?.slice(0, 16) || ""}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  const dt = new Date(v);
-                                  updateBulkDraft(idx, {
-                                    runAt: isNaN(dt.getTime()) ? d.runAt : dt.toISOString(),
-                                  });
-                                  setActiveDraftIndex(idx);
-                                }}
-                              />
-                            </td>
-                            <td>
-                              <select
-                                value={d.body?.cta || "CALL_NOW"}
-                                onChange={(e) => {
-                                  updateBulkDraftBody(idx, { cta: e.target.value });
-                                  setActiveDraftIndex(idx);
-                                }}
-                              >
-                                {CTA_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td>
-                              <input
-                                value={d.body?.linkUrl || ""}
-                                onChange={(e) => {
-                                  updateBulkDraftBody(idx, { linkUrl: e.target.value });
-                                  setActiveDraftIndex(idx);
-                                }}
-                                placeholder="https://..."
-                              />
-                            </td>
-                            <td>
-                              <input
-                                value={d.body?.mediaUrl || ""}
-                                onChange={(e) => {
-                                  updateBulkDraftBody(idx, { mediaUrl: e.target.value });
-                                  setActiveDraftIndex(idx);
-                                }}
-                                placeholder="/uploads/..."
-                              />
-                            </td>
-                            <td>
-                              <div className="bulk-snippet">
-                                {(d.body?.postText || "").trim() || "—"}
-                              </div>
-                            </td>
-                            <td>
-                              <div className="action-row">
-                                <button
-                                  className="btn btn--ghost btn--small"
-                                  type="button"
-                                  onClick={() => setActiveDraftIndex(idx)}
-                                  disabled={activeDraftIndex === idx}
-                                >
-                                  {activeDraftIndex === idx ? "Previewing" : "Preview"}
-                                </button>
-                                <button
-                                  className="btn btn--ghost btn--small"
-                                  type="button"
-                                  onClick={() =>
-                                    setBulkDrafts((prev) => prev.filter((_, i) => i !== idx))
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <BulkDraftsTable
+                      drafts={bulkDrafts}
+                      ctaOptions={CTA_OPTIONS}
+                      activeIndex={activeDraftIndex}
+                      overlayUrl={overlayUrl}
+                      onRunAtChange={handleDraftRunAtChange}
+                      onCtaChange={handleDraftCtaChange}
+                      onLinkChange={handleDraftLinkChange}
+                      onMediaChange={handleDraftMediaChange}
+                      onOverlayApply={handleDraftOverlayApply}
+                      onOverlayClear={handleDraftOverlayClear}
+                      onPreview={handleDraftPreview}
+                      onRemove={handleDraftRemove}
+                    />
                   )}
                 </div>
                 {activeBulkDraft ? (
-                  <div className="panel-section bulk-draft-shell">
-                    <div className="bulk-draft-header">
-                      <div>
-                        <div className="muted small">
-                          Draft {activeDraftIndex + 1} of {bulkDrafts.length} ·{" "}
-                          {activeBulkDraft.runAt
-                            ? new Date(activeBulkDraft.runAt).toLocaleString()
-                            : "No time set"}
-                        </div>
-                        <div className="bulk-draft-meta">
-                          <span>CTA: {CTA_LABELS[activeDraftBody.cta] || activeDraftBody.cta || "—"}</span>
-                          <span>Media: {activeDraftBody.mediaUrl || "None"}</span>
-                        </div>
-                      </div>
-                      <div className="action-row">
-                        <button
-                          className="btn btn--ghost btn--small"
-                          type="button"
-                          onClick={() => setActiveDraftIndex((i) => Math.max(0, i - 1))}
-                          disabled={activeDraftIndex <= 0}
-                        >
-                          Previous
-                        </button>
-                        <button
-                          className="btn btn--ghost btn--small"
-                          type="button"
-                          onClick={() =>
-                            setActiveDraftIndex((i) =>
-                              Math.min(bulkDrafts.length - 1, i + 1)
-                            )
-                          }
-                          disabled={activeDraftIndex >= bulkDrafts.length - 1}
-                        >
-                          Next
-                        </button>
-                        <button
-                          className="btn btn--indigo btn--small"
-                          type="button"
-                          onClick={() => regenerateBulkDraft(activeDraftIndex)}
-                          disabled={
-                            bulkBusy ||
-                            regeneratingDraftIndex === activeDraftIndex
-                          }
-                        >
-                          {regeneratingDraftIndex === activeDraftIndex
-                            ? "Regenerating..."
-                            : "Regenerate text"}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="bulk-draft-grid">
-                      <div className="post-preview">
-                        <div className="post-preview__header">
-                          <div>
-                            <div className="post-preview__eyebrow">Posting to</div>
-                            <div className="post-preview__profile">
-                              {selectedProfile?.businessName ||
-                                activeBulkDraft.profileId ||
-                                selectedId ||
-                                "—"}
-                              {selectedProfile?.city ? " · " + selectedProfile.city : ""}
-                            </div>
-                          </div>
-                          <div className="post-preview__badge">
-                            {getPostTypeLabel(activeDraftBody.topicType || "STANDARD")}
-                          </div>
-                        </div>
-                        <div className="post-preview__copy">
-                          {(activeDraftBody.postText || "").trim() || "—"}
-                        </div>
-                        <div className="post-preview__cta-row">
-                          <a
-                            className={
-                              "preview-cta-btn" + (activeDraftHref ? "" : " is-disabled")
-                            }
-                            href={activeDraftHref || undefined}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => {
-                              if (!activeDraftHref) e.preventDefault();
-                            }}
-                          >
-                            {CTA_LABELS[activeDraftCta] || "CTA button"}
-                          </a>
-                          <div className="post-preview__meta">
-                            <div>
-                              Link:{" "}
-                              {activeDraftLink ? (
-                                activeDraftHref ? (
-                                  <a href={activeDraftHref} target="_blank" rel="noreferrer">
-                                    {activeDraftLink}
-                                  </a>
-                                ) : (
-                                  <span className="error-text">
-                                    {activeDraftCta === "CALL_NOW"
-                                      ? "Use tel:+1... or https://"
-                                      : "Needs https:// link"}
-                                  </span>
-                                )
-                              ) : (
-                                <span className="muted small">No link provided</span>
-                              )}
-                            </div>
-                            <div>
-                              Photo:{" "}
-                              {activeDraftBody.mediaUrl ? (
-                                <span className="muted small">{activeDraftBody.mediaUrl}</span>
-                              ) : (
-                                <span className="muted small">None attached</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        {resolveMediaPreviewUrl(activeDraftMedia, backendBase) ? (
-                          <div className="post-preview__media">
-                            <img
-                              src={resolveMediaPreviewUrl(activeDraftMedia, backendBase)}
-                              alt="Post media preview"
-                            />
-                          </div>
-                        ) : null}
-                        <div className="post-preview__footer muted small">
-                          Live preview of the selected draft.
-                        </div>
-                      </div>
-                      <div className="bulk-draft-editor">
-                        <label className="field-label">Post copy</label>
-                        <textarea
-                          value={activeDraftBody.postText || ""}
-                          onChange={(e) => {
-                            updateBulkDraftBody(activeDraftIndex, { postText: e.target.value });
-                          }}
-                          placeholder="Edit the generated text before scheduling."
-                        />
-                        <label className="field-label">CTA</label>
-                        <select
-                          value={activeDraftBody.cta || "CALL_NOW"}
-                          onChange={(e) => {
-                            updateBulkDraftBody(activeDraftIndex, { cta: e.target.value });
-                          }}
-                        >
-                          {CTA_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        <label className="field-label">Link</label>
-                        <input
-                          value={activeDraftBody.linkUrl || ""}
-                          onChange={(e) =>
-                            updateBulkDraftBody(activeDraftIndex, { linkUrl: e.target.value })
-                          }
-                          placeholder="https://..."
-                          disabled={activeDraftCta === "CALL_NOW"}
-                        />
-                        {linkOptions.length > 0 && (
-                          <select
-                            defaultValue=""
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v) {
-                                updateBulkDraftBody(activeDraftIndex, { linkUrl: v });
-                              }
-                            }}
-                            disabled={activeDraftCta === "CALL_NOW"}
-                          >
-                            <option value="">Pick saved link</option>
-                            {linkOptions.map((u, idx) => (
-                              <option key={idx} value={u}>
-                                {u}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <label className="field-label">Media URL</label>
-                        <input
-                          value={activeDraftBody.mediaUrl || ""}
-                          onChange={(e) =>
-                            updateBulkDraftBody(activeDraftIndex, { mediaUrl: e.target.value })
-                          }
-                          placeholder="/uploads/..."
-                        />
-                        <label className="field-label">Runs at</label>
-                        <input
-                          type="datetime-local"
-                          value={activeBulkDraft.runAt?.slice(0, 16) || ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const dt = new Date(v);
-                            updateBulkDraft(activeDraftIndex, {
-                              runAt: isNaN(dt.getTime())
-                                ? activeBulkDraft.runAt
-                                : dt.toISOString(),
-                            });
-                          }}
-                        />
-                        </div>
-                        {overlayUrl ? (
-                          <div className="media-preview-url small">
-                            Overlay: {overlayUrl}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
+                  <BulkDraftEditor
+                    draft={activeBulkDraft}
+                    draftIndex={activeDraftIndex}
+                    totalDrafts={bulkDrafts.length}
+                    profileName={activeDraftProfileName}
+                    profileCity={activeDraftCity}
+                    topicLabel={activeDraftTopicLabel}
+                    ctaLabel={CTA_LABELS[activeDraftCta] || "CTA button"}
+                    ctaOptions={CTA_OPTIONS}
+                    linkOptions={linkOptions}
+                    activeDraftBody={activeDraftBody}
+                    activeDraftCta={activeDraftCta}
+                    linkDisabled={activeDraftCta === "CALL_NOW"}
+                    activeDraftHref={activeDraftHref}
+                    metaRows={activeDraftMetaRows}
+                    mediaPreviewUrl={activeDraftMediaPreviewUrl}
+                    overlayPreviewUrl={activeDraftOverlayPreviewUrl}
+                    overlayValue={activeDraftBody.overlayUrl || ""}
+                    overlayGlobal={overlayUrl}
+                    runAtValue={activeDraftRunAtValue}
+                    onPrev={goToPreviousDraft}
+                    onNext={goToNextDraft}
+                    disablePrev={activeDraftIndex <= 0}
+                    disableNext={activeDraftIndex >= bulkDrafts.length - 1}
+                    onRegenerate={handleRegenerateActiveDraft}
+                    regenerating={isRegeneratingActive}
+                    bulkBusy={bulkBusy}
+                    onBodyChange={handleActiveDraftBodyChange}
+                    onRunAtChange={handleActiveDraftRunAtChange}
+                    onUseSavedLink={(value) =>
+                      value ? handleActiveDraftBodyChange({ linkUrl: value }) : null
+                    }
+                    onUseDefaultOverlay={handleActiveDraftUseDefaultOverlay}
+                    onPickOverlay={handleActiveDraftPickOverlay}
+                    onClearOverlay={handleActiveDraftClearOverlay}
+                  />
+                ) : null}
               </div>
             </section>
           )}
 
           {tab === "diagnostics" && (
-            <section className="panel-grid panel-grid--two">
-              <div className="panel">
-                <div className="panel-title">Accounts & locations</div>
-                <div className="panel-section action-row">
-                  <button className="btn btn--ghost" onClick={loadAccountsAndLocations}>
-                    Load accounts & locations
-                  </button>
-                </div>
-                <div className="panel-section diag-shell">
-                  {accounts ? (
-                    <>
-                      <div className="muted small">
-                        {Array.isArray(accounts.accounts)
-                          ? `${accounts.accounts.length} account(s)`
-                          : "No accounts array"}
-                      </div>
-                      {Array.isArray(accounts.accounts) &&
-                        accounts.accounts.map((a) => {
-                          const id = String(a.name || "").split("/").pop();
-                          const locBlock = locationsByAccount[id];
-                          const count =
-                            locBlock && Array.isArray(locBlock.locations)
-                              ? locBlock.locations.length
-                              : 0;
-                          return (
-                            <div key={a.name} className="diag-card">
-                              <div className="diag-title">
-                                {a.accountName || a.name}
-                              </div>
-                              <div className="muted small">ID: {id}</div>
-                              <div className="muted small">
-                                Locations: {count}
-                                {locBlock && locBlock.error && " (error fetching)"}
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </>
-                  ) : (
-                    <div className="muted small">
-                      Click “Load accounts & locations” to fetch live data.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="panel">
-                <div className="panel-title">Media / uploads check</div>
-                <div className="panel-section action-row">
-                  <button className="btn btn--ghost" onClick={loadUploadsInfo}>
-                    Check uploads
-                  </button>
-                </div>
-                <div className="panel-section diag-shell">
-                  {uploadsInfo ? (
-                    <>
-                      <div className="muted small">
-                        Files: {uploadsInfo.count ?? uploadsInfo.files?.length ?? 0}
-                      </div>
-                      {uploadsInfo.urls && uploadsInfo.urls.length > 0 && (
-                        <ul className="muted small">
-                          {uploadsInfo.urls.slice(0, 5).map((u) => (
-                            <li key={u}>{u}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {uploadsCheck && (
-                        <div className="muted small">
-                          Last check: {uploadsCheck.ok ? "OK" : "NOT OK"} ·{" "}
-                          {uploadsCheck.url || ""} (
-                          {uploadsCheck.status || "no status"})
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="muted small">
-                      Click “Check uploads” to verify PUBLIC_BASE_URL + /uploads.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
+            <DiagnosticsPanels
+              accounts={accounts}
+              locationsByAccount={locationsByAccount}
+              onLoadAccounts={loadAccountsAndLocations}
+              uploadsInfo={uploadsInfo}
+              uploadsCheck={uploadsCheck}
+              onCheckUploads={loadUploadsInfo}
+            />
           )}
         </main>
 
@@ -5032,10 +4744,23 @@ export default function App() {
           onClose={() => setMediaGalleryOpen(false)}
           uploadsInfo={uploadsInfo}
           backendBase={backendBase}
-          photoMeta={mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null}
+          photoMeta={
+            mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null
+          }
           notify={notify}
           onSelect={(value) => {
-            if (mediaGalleryContext === "overlay") {
+            const overlayDraftMatch =
+              typeof mediaGalleryContext === "string"
+                ? mediaGalleryContext.match(/^overlay-draft-(\d+)$/)
+                : null;
+            if (overlayDraftMatch) {
+              const draftIdx = parseInt(overlayDraftMatch[1], 10);
+              if (!Number.isNaN(draftIdx)) {
+                updateBulkDraftBody(draftIdx, { overlayUrl: value });
+                setActiveDraftIndex(draftIdx);
+                notify("Overlay assigned to draft.");
+              }
+            } else if (mediaGalleryContext === "overlay") {
               setOverlayUrl(value);
               notify("Overlay selected from gallery.");
             } else {
@@ -5047,7 +4772,19 @@ export default function App() {
           }}
           onSelectMultiple={(values) => {
             const list = Array.isArray(values) ? values : [];
-            if (mediaGalleryContext === "overlay") {
+            const overlayDraftMatch =
+              typeof mediaGalleryContext === "string"
+                ? mediaGalleryContext.match(/^overlay-draft-(\d+)$/)
+                : null;
+            if (overlayDraftMatch) {
+              const draftIdx = parseInt(overlayDraftMatch[1], 10);
+              const first = list[0] || "";
+              if (!Number.isNaN(draftIdx) && first) {
+                updateBulkDraftBody(draftIdx, { overlayUrl: first });
+                setActiveDraftIndex(draftIdx);
+                notify("Overlay assigned to draft.");
+              }
+            } else if (mediaGalleryContext === "overlay") {
               const first = list[0] || "";
               if (first) setOverlayUrl(first);
               notify("Overlay selected from gallery.");
@@ -5067,15 +4804,24 @@ export default function App() {
             setUploadsInfo((prev) => {
               if (!prev) return prev;
               const key = normalize(raw);
-              const nextUrls = (prev.urls || []).filter((u) => normalize(u) !== key);
-              const nextFiles = (prev.files || []).filter((f) => normalize(f) !== key);
+              const nextUrls = (prev.urls || []).filter(
+                (u) => normalize(u) !== key
+              );
+              const nextFiles = (prev.files || []).filter(
+                (f) => normalize(f) !== key
+              );
               const nextCount = Math.max(
                 0,
                 prev.count != null
                   ? prev.count - 1
                   : Math.max(nextUrls.length, nextFiles.length)
               );
-              return { ...prev, urls: nextUrls, files: nextFiles, count: nextCount };
+              return {
+                ...prev,
+                urls: nextUrls,
+                files: nextFiles,
+                count: nextCount,
+              };
             });
           }}
           onUploadComplete={async () => {
