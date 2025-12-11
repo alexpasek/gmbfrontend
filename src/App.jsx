@@ -801,6 +801,7 @@ export default function App() {
   const [backendBase, setBackendBase] = useState(DEFAULT_BACKEND_BASE);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [toggleBusyId, setToggleBusyId] = useState("");
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const [tab, setTab] = useState(() => {
     if (typeof window === "undefined") return "dashboard";
@@ -859,6 +860,28 @@ export default function App() {
     return localStorage.getItem(STORAGE_KEYS.overlayUrl) || "";
   });
   const [composedMediaUrl, setComposedMediaUrl] = useState("");
+  const closeSidebar = React.useCallback(() => setSidebarOpen(false), []);
+  const openSidebar = React.useCallback(() => setSidebarOpen(true), []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => {
+      if (window.innerWidth > 1024) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
   const schedulingBusy =
     photoSchedulerStatus === "saving" ||
     photoSchedulerStatus === "stamping" ||
@@ -2976,7 +2999,16 @@ export default function App() {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${isSidebarOpen ? " sidebar--open" : ""}`}>
+        <button
+          type="button"
+          className="sidebar-close"
+          aria-label="Close navigation"
+          onClick={closeSidebar}
+        >
+          <span />
+          <span />
+        </button>
         <div className="sidebar-logo">
           <div className="logo-mark">GV</div>
           <div>
@@ -2989,7 +3021,10 @@ export default function App() {
             <button
               key={t.id}
               className={"nav-item" + (tab === t.id ? " nav-item--active" : "")}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                closeSidebar();
+              }}
             >
               {t.label}
             </button>
@@ -3002,10 +3037,16 @@ export default function App() {
           </div>
         </div>
       </aside>
+      <div
+        className={
+          "sidebar-overlay" + (isSidebarOpen ? " sidebar-overlay--visible" : "")
+        }
+        onClick={closeSidebar}
+      />
 
       <div className="main">
         <header className="main-header">
-          <div>
+          <div className="main-header-text">
             <h1 className="main-title">
               {TABS.find((t) => t.id === tab)?.label || "Dashboard"}
             </h1>
@@ -3027,20 +3068,32 @@ export default function App() {
             </p>
           </div>
 
-          <div className="profile-switcher">
-            <label className="field-label">Active profile</label>
-            <select
-              value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
+          <div className="main-header-right">
+            <button
+              type="button"
+              className="sidebar-toggle"
+              aria-label="Open navigation"
+              onClick={openSidebar}
             >
-              {profiles.map((p) => (
-                <option key={p.profileId} value={p.profileId}>
-                  {(p.businessName || p.profileId) +
-                    (p.city ? " — " + p.city : "") +
-                    (p.disabled ? " (paused)" : "")}
-                </option>
-              ))}
-            </select>
+              <span />
+              <span />
+              <span />
+            </button>
+            <div className="profile-switcher">
+              <label className="field-label">Active profile</label>
+              <select
+                value={selectedId}
+                onChange={(e) => setSelectedId(e.target.value)}
+              >
+                {profiles.map((p) => (
+                  <option key={p.profileId} value={p.profileId}>
+                    {(p.businessName || p.profileId) +
+                      (p.city ? " — " + p.city : "") +
+                      (p.disabled ? " (paused)" : "")}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </header>
 
