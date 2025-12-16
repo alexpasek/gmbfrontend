@@ -1318,6 +1318,11 @@ export default function App() {
   }, [selectedId, selectedProfile?.defaults]);
 
   useEffect(() => {
+    // Reset composed preview when base media or overlay selection changes.
+    setComposedMediaUrl("");
+  }, [mediaUrl, overlayUrl]);
+
+  useEffect(() => {
     if (cta === "CALL_NOW") {
       const tel = phoneCandidate || "";
       setLinkUrl(tel);
