@@ -68,10 +68,10 @@ const api = {
   async getProfiles() {
     return doFetch("/profiles");
   },
-  async generatePost(profileId) {
-    return doFetch(
-      `/generate-post-by-profile?profileId=${encodeURIComponent(profileId)}`
-    );
+  async generatePost(profileId, serviceTopicId = "") {
+    const params = new URLSearchParams({ profileId });
+    if (serviceTopicId) params.set("serviceTopicId", serviceTopicId);
+    return doFetch(`/generate-post-by-profile?${params.toString()}`);
   },
   async postNow({
     profileId,
@@ -86,6 +86,10 @@ const api = {
     offerTitle,
     offerCoupon,
     offerRedeemUrl,
+    overlayUrl,
+    phone,
+    serviceTopicId,
+    serviceType,
   }) {
     return doFetch("/post-now", {
       method: "POST",
@@ -95,6 +99,10 @@ const api = {
         cta,
         linkUrl,
         mediaUrl,
+        overlayUrl,
+        phone,
+        serviceTopicId,
+        serviceType,
         topicType,
         eventTitle,
         eventStart,

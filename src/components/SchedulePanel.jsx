@@ -38,7 +38,14 @@ export default function SchedulePanel({
   postText,
   onChangePostText,
   preview,
+  serviceTopics,
+  serviceTopicId,
+  defaultServiceTopicId,
+  onChangeServiceTopicId,
 }) {
+  const defaultTopic =
+    defaultServiceTopicId &&
+    serviceTopics.find((topic) => topic.id === defaultServiceTopicId);
   return (
     <section className="panel" ref={panelRef}>
       <div className="panel-title">Generate & post</div>
@@ -98,11 +105,11 @@ export default function SchedulePanel({
               ? "Retry"
               : "Schedule"}
           </button>
-        </div>
-        <p className="muted small">
-          Pick a future date/time to queue this post for the selected profile. Click a scheduled row to
-          load it for editing.
-        </p>
+      </div>
+      <p className="muted small">
+        Pick a future date/time to queue this post for the selected profile. Click a scheduled row to
+        load it for editing.
+      </p>
         <div className="section-grid" style={{ alignItems: "end" }}>
           <div>
             <label className="field-label">Auto cadence</label>
@@ -121,6 +128,23 @@ export default function SchedulePanel({
             Auto schedule with AI
           </button>
         </div>
+      </div>
+      <div className="panel-section">
+        <label className="field-label">Service topic</label>
+        <select value={serviceTopicId || ""} onChange={(e) => onChangeServiceTopicId(e.target.value)}>
+          <option value="">
+            Use default topic{" "}
+            {defaultTopic ? `(${defaultTopic.label})` : ""}
+          </option>
+          {serviceTopics.map((topic) => (
+            <option key={topic.id} value={topic.id}>
+              {topic.label}
+            </option>
+          ))}
+        </select>
+        <p className="muted small">
+          Determines which SEO service the AI copy references. Leave blank to use the profile default.
+        </p>
       </div>
       <div className="panel-section">
         <div className="section">

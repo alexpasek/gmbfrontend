@@ -18,6 +18,82 @@ import DiagnosticsPanels from "./components/DiagnosticsPanels";
 
 const DEFAULT_BACKEND_BASE = "https://gmb-automation-backend.webtoronto22.workers.dev";
 
+const SERVICE_TOPIC_PRESETS = [
+  {
+    key: "popcorn",
+    label: "Popcorn ceiling removal",
+    serviceType: "Popcorn ceiling removal",
+    summary:
+      "We scrape, resurface, and repaint popcorn ceilings so Calgary homes feel brighter, cleaner, and ready for resale.",
+    hashtags: ["#PopcornRemoval", "#CeilingRefresh", "#CalgaryRenovations"],
+  },
+  {
+    key: "drywall-install",
+    label: "Drywall installation",
+    serviceType: "Drywall installation",
+    summary:
+      "Precision drywall installation for basements, additions, and tenant improvements with clean lines and fast finishing.",
+    hashtags: ["#DrywallInstallation", "#FramingToFinish", "#YYCContractor"],
+  },
+  {
+    key: "drywall-repair",
+    label: "Drywall repair",
+    serviceType: "Drywall repair",
+    summary:
+      "Patch holes, re-tape seams, and retexture walls so the repair disappears and paint lays down perfectly.",
+    hashtags: ["#DrywallRepair", "#WallRescue", "#CalgaryHomes"],
+  },
+  {
+    key: "baseboard-install",
+    label: "Baseboard installation",
+    serviceType: "Baseboard installation",
+    summary:
+      "Trim carpenters install new baseboards and casing with tight corners, custom caulking, and pro paint-ready prep.",
+    hashtags: ["#BaseboardInstall", "#TrimCarpentry", "#FinishingCarpenter"],
+  },
+  {
+    key: "wallpaper-removal",
+    label: "Wallpaper removal",
+    serviceType: "Wallpaper removal",
+    summary:
+      "Steaming, stripping, and skim-coating wallpapered rooms so new paint or paper goes on a smooth surface.",
+    hashtags: ["#WallpaperRemoval", "#PrepAndPaint", "#CalgaryRenovation"],
+  },
+];
+
+function generateClientId(prefix = "svc") {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+function buildPresetTopic(preset) {
+  return {
+    id: generateClientId("svc"),
+    label: preset.label,
+    serviceType: preset.serviceType,
+    summary: preset.summary,
+    hashtags: preset.hashtags || [],
+    isDefault: false,
+    notes: "",
+  };
+}
+
+function createEmptyServiceTopic() {
+  return {
+    id: generateClientId("svc"),
+    label: "New service",
+    serviceType: "",
+    summary: "",
+    hashtags: [],
+    isDefault: false,
+    notes: "",
+  };
+}
+
 /** Resolve a URL we can actually <img src> */
 function resolveMediaPreviewUrl(mediaUrl, backendBase) {
   if (!mediaUrl) return "";
@@ -145,12 +221,31 @@ function MediaGalleryModal({
     if (showAllFolders) return items;
     return items.filter((it) => (it.folder || "") === (currentFolder || ""));
   }, [items, showAllFolders, currentFolder]);
+  const visibleKeys = React.useMemo(
+    () => visibleItems.map((it) => it.key),
+    [visibleItems]
+  );
+  const allVisibleSelected =
+    visibleItems.length > 0 &&
+    visibleItems.every((it) => selected.includes(it.key));
 
   function toggle(key) {
     setSelected((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   }
+  const handleSelectAllVisible = () => {
+    if (!visibleItems.length) return;
+    if (allVisibleSelected) {
+      setSelected((prev) => prev.filter((key) => !visibleKeys.includes(key)));
+    } else {
+      setSelected((prev) => {
+        const set = new Set(prev);
+        visibleItems.forEach((item) => set.add(item.key));
+        return Array.from(set);
+      });
+    }
+  };
 
   function toggleWithRange(key, index, event) {
     if (event?.shiftKey && lastSelectedRef.current != null) {
@@ -385,6 +480,13 @@ function MediaGalleryModal({
             disabled={!selected.length}
           >
             Use selected
+          </button>
+          <button
+            className="btn btn--ghost btn--small"
+            onClick={handleSelectAllVisible}
+            disabled={!visibleItems.length}
+          >
+            {allVisibleSelected ? "Clear shown" : "Select shown"}
           </button>
           <button
             className="btn btn--ghost btn--small"
@@ -764,6 +866,10 @@ export default function App() {
   const [serviceAreaLink, setServiceAreaLink] = useState("");
   const [areaMapLink, setAreaMapLink] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
+  const [serviceTopics, setServiceTopics] = useState([]);
+  const [defaultServiceTopicId, setDefaultServiceTopicId] = useState("");
+  const [mediaTopics, setMediaTopics] = useState({});
+  const [composerServiceTopicId, setComposerServiceTopicId] = useState("");
   const [defaultPhone, setDefaultPhone] = useState("");
   const [photoLat, setPhotoLat] = useState("");
   const [photoLng, setPhotoLng] = useState("");
@@ -893,6 +999,15 @@ export default function App() {
     () => profiles.find((p) => p.profileId === selectedId),
     [profiles, selectedId]
   );
+  const serviceTopicMap = useMemo(() => {
+    const map = {};
+    serviceTopics.forEach((topic) => {
+      if (topic && topic.id) {
+        map[topic.id] = topic;
+      }
+    });
+    return map;
+  }, [serviceTopics]);
 
   const activeBulkDraft = useMemo(
     () => (activeDraftIndex >= 0 ? bulkDrafts[activeDraftIndex] : null),
@@ -922,7 +1037,74 @@ export default function App() {
       setAreaMapLink(targetValue);
     }
   };
+  const addServiceTopic = (preset) => {
+    setServiceTopics((prev) => [
+      ...prev,
+      preset ? buildPresetTopic(preset) : createEmptyServiceTopic(),
+    ]);
+  };
+  const updateServiceTopic = (id, patch) => {
+    setServiceTopics((prev) =>
+      prev.map((topic) =>
+        topic.id === id ? { ...topic, ...patch } : topic
+      )
+    );
+  };
+  const removeServiceTopic = (id) => {
+    setServiceTopics((prev) => prev.filter((topic) => topic.id !== id));
+    if (defaultServiceTopicId === id) {
+      const nextDefault =
+        serviceTopics.find((topic) => topic.id !== id)?.id || "";
+      setDefaultServiceTopicId(nextDefault);
+    }
+    if (composerServiceTopicId === id) {
+      setComposerServiceTopicId("");
+    }
+  };
+  const handleDefaultServiceTopicChange = (id) => {
+    setDefaultServiceTopicId(id || "");
+    setServiceTopics((prev) =>
+      prev.map((topic) => ({ ...topic, isDefault: topic.id === id }))
+    );
+  };
+  const handleMediaTopicChange = (url, topicId) => {
+    if (!url) return;
+    setMediaTopics((prev) => {
+      const next = { ...prev };
+      if (topicId) {
+        next[String(url)] = topicId;
+      } else {
+        delete next[String(url)];
+      }
+      return next;
+    });
+  };
+  const getTopicIdForMedia = (url) => {
+    const key = String(url || "");
+    return (
+      mediaTopics[key] ||
+      defaultServiceTopicId ||
+      serviceTopics[0]?.id ||
+      ""
+    );
+  };
+  const buildBulkImageEntry = (url) => ({
+    url,
+    serviceTopicId: getTopicIdForMedia(url),
+  });
+  const handleBulkImageTopicChange = (idx, topicId) => {
+    setBulkImages((prev) =>
+      prev.map((item, i) =>
+        i === idx ? { ...item, serviceTopicId: topicId } : item
+      )
+    );
+  };
   const activeDraftHref = resolveCtaLink(activeDraftCta, activeDraftLink);
+  const effectiveComposerTopicId =
+    composerServiceTopicId || defaultServiceTopicId || "";
+  const composerTopic =
+    (effectiveComposerTopicId && serviceTopicMap[effectiveComposerTopicId]) ||
+    null;
   const previewProfileName =
     previewDetails?.profileName ||
     selectedProfile?.businessName ||
@@ -1020,9 +1202,15 @@ export default function App() {
     selectedId ||
     "—";
   const activeDraftCity = selectedProfile?.city || "";
-  const activeDraftTopicLabel = getPostTypeLabel(
-    activeDraftBody.topicType || "STANDARD"
-  );
+  const activeDraftTopicLabel =
+    (activeDraftBody.serviceTopicId &&
+      serviceTopicMap[activeDraftBody.serviceTopicId]?.label) ||
+    activeDraftBody.serviceTopicLabel ||
+    (defaultServiceTopicId &&
+    serviceTopicMap[defaultServiceTopicId]
+      ? serviceTopicMap[defaultServiceTopicId].label
+      : null) ||
+    getPostTypeLabel(activeDraftBody.topicType || "STANDARD");
   const activeDraftRunAtValue =
     (activeBulkDraft?.runAt && activeBulkDraft.runAt.slice(0, 16)) || "";
   const isRegeneratingActive = regeneratingDraftIndex === activeDraftIndex;
@@ -1318,6 +1506,46 @@ export default function App() {
   }, [selectedId, selectedProfile?.defaults]);
 
   useEffect(() => {
+    if (!selectedProfile) {
+      setServiceTopics([]);
+      setDefaultServiceTopicId("");
+      setMediaTopics({});
+      setComposerServiceTopicId("");
+      return;
+    }
+    const sourceList =
+      Array.isArray(selectedProfile.serviceTopics) &&
+      selectedProfile.serviceTopics.length
+        ? selectedProfile.serviceTopics
+        : SERVICE_TOPIC_PRESETS.map((preset) => buildPresetTopic(preset));
+    const cloned = sourceList.map((topic) => ({
+      ...topic,
+      hashtags: Array.isArray(topic?.hashtags) ? topic.hashtags : [],
+    }));
+    const nextDefaultId =
+      selectedProfile.defaultServiceTopicId ||
+      cloned.find((topic) => topic && topic.isDefault)?.id ||
+      cloned[0]?.id ||
+      "";
+    setServiceTopics(cloned);
+    setDefaultServiceTopicId(nextDefaultId);
+    setMediaTopics({ ...(selectedProfile.mediaTopics || {}) });
+    setComposerServiceTopicId(nextDefaultId);
+  }, [
+    selectedProfile?.profileId,
+    selectedProfile?.serviceTopics,
+    selectedProfile?.defaultServiceTopicId,
+    selectedProfile?.mediaTopics,
+  ]);
+
+  useEffect(() => {
+    if (!composerServiceTopicId) return;
+    if (!serviceTopicMap[composerServiceTopicId]) {
+      setComposerServiceTopicId(defaultServiceTopicId || "");
+    }
+  }, [composerServiceTopicId, defaultServiceTopicId, serviceTopicMap]);
+
+  useEffect(() => {
     // Reset composed preview when base media or overlay selection changes.
     setComposedMediaUrl("");
   }, [mediaUrl, overlayUrl]);
@@ -1524,7 +1752,7 @@ export default function App() {
     setPreviewing(true);
     setPreviewDetails(null);
     try {
-      const r = await api.generatePost(selectedId);
+      const r = await api.generatePost(selectedId, effectiveComposerTopicId);
       if (r && r.post) {
         setPreview(r.post);
         setPostText(r.post);
@@ -2029,6 +2257,9 @@ export default function App() {
         phone: phoneCandidate.replace(/^tel:/i, ""),
         mediaUrl: mediaForPost,
         overlayUrl: overlayUsed,
+        serviceTopicId: effectiveComposerTopicId,
+        serviceType:
+          composerTopic?.serviceType || composerTopic?.label || "",
         topicType: postType,
         eventTitle,
         eventStart,
@@ -2087,6 +2318,9 @@ export default function App() {
       phone: phoneCandidate.replace(/^tel:/i, ""),
       mediaUrl,
       overlayUrl,
+       serviceTopicId: effectiveComposerTopicId,
+       serviceType:
+         composerTopic?.serviceType || composerTopic?.label || "",
       topicType: postType,
       eventTitle,
       eventStart,
@@ -2449,6 +2683,19 @@ export default function App() {
     if (activeDraftIndex < 0) return;
     updateBulkDraftBody(activeDraftIndex, patch);
   };
+  const applyServiceTopicToDraft = (idx, topicId) => {
+    if (idx < 0) return;
+    const topic = topicId ? serviceTopicMap[topicId] : null;
+    updateBulkDraftBody(idx, {
+      serviceTopicId: topicId || "",
+      serviceTopicLabel: topic ? topic.label : "",
+      serviceType: topic ? topic.serviceType : "",
+    });
+  };
+  const handleActiveDraftServiceTopicChange = (value) => {
+    if (activeDraftIndex < 0) return;
+    applyServiceTopicToDraft(activeDraftIndex, value);
+  };
 
   const handleActiveDraftRunAtChange = (value) => {
     if (activeDraftIndex < 0) return;
@@ -2496,8 +2743,17 @@ export default function App() {
 
   async function autoScheduleWithAi() {
     if (!selectedId) return notify("Select a profile first");
-    const images =
-      bulkImages.length > 0 ? bulkImages : mediaUrl ? [mediaUrl] : [];
+    const queuedImages =
+      bulkImages.length > 0
+        ? bulkImages
+        : mediaUrl
+        ? [
+            {
+              url: mediaUrl,
+              serviceTopicId: effectiveComposerTopicId,
+            },
+          ]
+        : [];
     if (!images.length)
       return notify("Select at least one image (gallery or photo URL).");
     const durationDays =
@@ -2513,7 +2769,7 @@ export default function App() {
             images.length,
             Math.max(1, Math.ceil(durationDays / autoCadenceDays || 1))
           );
-    const useImages = images.slice(0, slotsLimit);
+    const useImages = queuedImages.slice(0, slotsLimit);
     const start = `${scheduleDate || new Date().toISOString().slice(0, 10)}T${
       scheduleTime || "10:00"
     }:00`;
@@ -2521,7 +2777,10 @@ export default function App() {
       setBulkBusy(true);
       const payload = {
         profileId: selectedId,
-        images: useImages,
+        images: useImages.map((img) => ({
+          mediaUrl: img.url,
+          serviceTopicId: img.serviceTopicId || "",
+        })),
         startAt: start,
         cadenceDays: autoCadenceDays,
         autoGenerateSummary: true,
@@ -2536,6 +2795,9 @@ export default function App() {
           offerTitle,
           offerCoupon,
           offerRedeemUrl,
+          serviceTopicId: effectiveComposerTopicId,
+          serviceType:
+            composerTopic?.serviceType || composerTopic?.label || "",
         },
       };
       const draftsRes = await api.draftScheduledPosts(payload);
@@ -2572,7 +2834,10 @@ export default function App() {
             bulkImages.length,
             Math.max(1, Math.ceil(durationDays / bulkCadenceDays || 1))
           );
-    const images = bulkImages.slice(0, slotsLimit);
+    const images = bulkImages.slice(0, slotsLimit).map((img) => ({
+      mediaUrl: img.url,
+      serviceTopicId: img.serviceTopicId || "",
+    }));
     const start = `${scheduleDate || new Date().toISOString().slice(0, 10)}T${
       scheduleTime || "10:00"
     }:00`;
@@ -2597,6 +2862,9 @@ export default function App() {
           offerTitle,
           offerCoupon,
           offerRedeemUrl,
+          serviceTopicId: effectiveComposerTopicId,
+          serviceType:
+            composerTopic?.serviceType || composerTopic?.label || "",
         },
       };
       const res = await api.draftScheduledPosts(body);
@@ -2832,6 +3100,21 @@ export default function App() {
         reviewLink: String(reviewLink || "").trim(),
         serviceAreaLink: String(serviceAreaLink || "").trim(),
         areaMapLink: String(areaMapLink || "").trim(),
+        serviceTopics: serviceTopics.map((topic) => ({
+          ...topic,
+          hashtags: Array.isArray(topic.hashtags)
+            ? topic.hashtags.filter(Boolean)
+            : [],
+        })),
+        defaultServiceTopicId,
+        mediaTopics: Object.fromEntries(
+          Object.entries(mediaTopics || {}).filter(
+            ([url, topicId]) =>
+              url &&
+              topicId &&
+              serviceTopics.some((topic) => topic.id === topicId)
+          )
+        ),
       });
       notify("Defaults saved");
       const pr = await api.getProfiles();
@@ -2883,7 +3166,8 @@ export default function App() {
         null
       );
       if (urls.length) {
-        setBulkImages((prev) => [...prev, ...urls].slice(-50));
+        const entries = urls.map((u) => buildBulkImageEntry(u));
+        setBulkImages((prev) => [...prev, ...entries].slice(-50));
         if (!mediaUrl) setMediaUrl(urls[0]);
         if (activeDraftIndex >= 0) {
           updateBulkDraftBody(activeDraftIndex, { mediaUrl: urls[0] });
@@ -3258,6 +3542,16 @@ export default function App() {
                 handlePhotoUpload={handlePhotoUpload}
                 saveProfileDefaults={saveProfileDefaults}
                 hasProfile={!!selectedProfile}
+                serviceTopics={serviceTopics}
+                onServiceTopicAdd={addServiceTopic}
+                onServiceTopicFieldChange={updateServiceTopic}
+                onServiceTopicRemove={removeServiceTopic}
+                defaultServiceTopicId={defaultServiceTopicId}
+                onDefaultServiceTopicChange={handleDefaultServiceTopicChange}
+                serviceTopicPresets={SERVICE_TOPIC_PRESETS}
+                mediaTopics={mediaTopics}
+                onMediaTopicChange={handleMediaTopicChange}
+                photoPool={selectedProfile?.photoPool || []}
               />
 
               <SchedulePanel
@@ -3298,6 +3592,10 @@ export default function App() {
                 postText={postText}
                 onChangePostText={setPostText}
                 preview={preview}
+                serviceTopics={serviceTopics}
+                serviceTopicId={composerServiceTopicId}
+                defaultServiceTopicId={defaultServiceTopicId}
+                onChangeServiceTopicId={setComposerServiceTopicId}
               />
 
               <section className="panel">
@@ -4552,6 +4850,11 @@ export default function App() {
                                       setCta(it.body.cta || "CALL_NOW");
                                       setLinkUrl(it.body.linkUrl || "");
                                       setMediaUrl(it.body.mediaUrl || "");
+                                      setComposerServiceTopicId(
+                                        it.body.serviceTopicId ||
+                                          defaultServiceTopicId ||
+                                          ""
+                                      );
                                     }
                                     if (generateRef.current) {
                                       generateRef.current.scrollIntoView({
@@ -4627,17 +4930,17 @@ export default function App() {
                   </div>
                   {bulkImages.length > 0 && (
                     <div className="bulk-selected-strip">
-                      {bulkImages.slice(0, 12).map((src, idx) => (
+                      {bulkImages.slice(0, 12).map((item, idx) => (
                         <div key={idx} className="bulk-thumb">
                           <img
-                            src={resolveMediaPreviewUrl(src, backendBase)}
+                            src={resolveMediaPreviewUrl(item.url, backendBase)}
                             alt=""
                             onError={(e) => {
                               e.currentTarget.style.display = "none";
                             }}
                             onClick={() =>
                               setLightboxSrc(
-                                resolveMediaPreviewUrl(src, backendBase)
+                                resolveMediaPreviewUrl(item.url, backendBase)
                               )
                             }
                             style={{ cursor: "pointer" }}
@@ -4656,6 +4959,60 @@ export default function App() {
                       >
                         Clear selection
                       </button>
+                    </div>
+                  )}
+                  {bulkImages.length > 0 && (
+                    <div
+                      className="bulk-topic-table"
+                      style={{
+                        marginTop: 12,
+                        maxHeight: 260,
+                        overflowY: "auto",
+                        border: "1px solid rgba(148,163,184,0.4)",
+                        borderRadius: 12,
+                        padding: 12,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      {bulkImages.map((item, idx) => (
+                        <div
+                          key={`${item.url}-${idx}`}
+                          className="bulk-topic-row"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "auto 1fr",
+                            gap: 12,
+                            alignItems: "center",
+                          }}
+                        >
+                          <div className="muted small">
+                            #{idx + 1} ·{" "}
+                            {(serviceTopicMap[item.serviceTopicId]?.label ||
+                              "Default")}
+                          </div>
+                          <select
+                            value={item.serviceTopicId || ""}
+                            onChange={(e) =>
+                              handleBulkImageTopicChange(idx, e.target.value)
+                            }
+                          >
+                            <option value="">
+                              Use default topic{" "}
+                              {defaultServiceTopicId &&
+                              serviceTopicMap[defaultServiceTopicId]
+                                ? `(${serviceTopicMap[defaultServiceTopicId].label})`
+                                : ""}
+                            </option>
+                            {serviceTopics.map((topic) => (
+                              <option key={topic.id} value={topic.id}>
+                                {topic.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -4777,6 +5134,8 @@ export default function App() {
                     onUseDefaultOverlay={handleActiveDraftUseDefaultOverlay}
                     onPickOverlay={handleActiveDraftPickOverlay}
                     onClearOverlay={handleActiveDraftClearOverlay}
+                    serviceTopics={serviceTopics}
+                    onServiceTopicChange={handleActiveDraftServiceTopicChange}
                   />
                 ) : null}
               </div>
@@ -4847,7 +5206,8 @@ export default function App() {
               if (first) setOverlayUrl(first);
               notify("Overlay selected from gallery.");
             } else {
-              setBulkImages(list.slice(0, 50));
+              const entries = list.slice(0, 50).map((url) => buildBulkImageEntry(url));
+              setBulkImages(entries);
               setMediaUrl(list[0] || "");
               setPhotoSchedMediaList(list.slice(0, 100));
               notify(`${list.length} photo(s) selected for bulk scheduling.`);

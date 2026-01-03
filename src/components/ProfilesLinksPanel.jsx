@@ -39,6 +39,16 @@ export default function ProfilesLinksPanel({
   handlePhotoUpload,
   saveProfileDefaults,
   hasProfile,
+  serviceTopics,
+  onServiceTopicAdd,
+  onServiceTopicFieldChange,
+  onServiceTopicRemove,
+  defaultServiceTopicId,
+  onDefaultServiceTopicChange,
+  serviceTopicPresets,
+  mediaTopics,
+  onMediaTopicChange,
+  photoPool,
 }) {
   return (
     <section className="panel">
@@ -230,6 +240,198 @@ export default function ProfilesLinksPanel({
           Regular posts don’t need geo tagging.
         </p>
       </div>
+      <div className="panel-section">
+        <div className="panel-subtitle">Service topics & SEO copy</div>
+        <p className="muted small">
+          Define every service you want AI to write about. Assign a default so manual posts and drafts stay on brand.
+        </p>
+        <div className="action-row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={() => onServiceTopicAdd()}
+              disabled={!hasProfile}
+            >
+              + Custom topic
+            </button>
+            {(serviceTopicPresets || []).map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                className="btn btn--ghost btn--small"
+                onClick={() => onServiceTopicAdd(preset)}
+                disabled={!hasProfile}
+              >
+                + {preset.label}
+              </button>
+            ))}
+          </div>
+        {serviceTopics.length === 0 ? (
+          <div className="muted small" style={{ marginTop: 8 }}>
+            No topics yet—add one above to get started.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
+            {serviceTopics.map((topic) => (
+              <div
+                key={topic.id}
+                style={{
+                  border: "1px solid rgba(148,163,184,0.4)",
+                  borderRadius: 12,
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <label className="field-label">Display name</label>
+                <input
+                  value={topic.label || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      label: e.target.value,
+                    })
+                  }
+                  placeholder="Drywall repair"
+                />
+                <label className="field-label">AI keyword/focus</label>
+                <input
+                  value={topic.serviceType || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      serviceType: e.target.value,
+                    })
+                  }
+                  placeholder="Drywall repair in Calgary"
+                />
+                <label className="field-label">SEO summary (optional)</label>
+                <textarea
+                  value={topic.summary || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      summary: e.target.value,
+                    })
+                  }
+                  placeholder="Describe this service so non-AI drafts can reuse it."
+                />
+                <label className="field-label">Hashtags</label>
+                <input
+                  value={(topic.hashtags || []).join(" ")}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      hashtags: e.target.value
+                        .split(/[\s,]+/)
+                        .map((tag) =>
+                          tag
+                            ? tag.startsWith("#")
+                              ? tag
+                              : `#${tag}`
+                            : ""
+                        )
+                        .filter((tag) => tag && tag !== "#"),
+                    })
+                  }
+                  placeholder="#DrywallRepair #YYCContractor"
+                />
+                <div className="action-row" style={{ marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => onDefaultServiceTopicChange(topic.id)}
+                    disabled={defaultServiceTopicId === topic.id}
+                  >
+                    {defaultServiceTopicId === topic.id
+                      ? "Default topic"
+                      : "Set as default"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => onServiceTopicRemove(topic.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {photoPool && photoPool.length > 0 ? (
+        <div className="panel-section">
+          <div className="panel-subtitle">Media topic defaults</div>
+          <p className="muted small">
+            Assign a service to any gallery photo. Bulk drafts will auto-select that topic whenever the photo is used.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {photoPool.slice(0, 12).map((item, idx) => {
+              const url = typeof item === "string" ? item : item?.url || "";
+              return (
+                <div
+                  key={`${url}-${idx}`}
+                  style={{
+                    border: "1px solid rgba(148,163,184,0.35)",
+                    borderRadius: 12,
+                    padding: 10,
+                  }}
+                >
+                  {resolveMediaPreviewUrl(url, backendBase) ? (
+                    <img
+                      src={resolveMediaPreviewUrl(url, backendBase)}
+                      alt=""
+                      style={{
+                        width: "100%",
+                        height: 120,
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        marginBottom: 8,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 120,
+                        borderRadius: 8,
+                        background: "rgba(148,163,184,0.15)",
+                        marginBottom: 8,
+                      }}
+                    />
+                  )}
+                  <select
+                    value={mediaTopics[url] || ""}
+                    onChange={(e) => onMediaTopicChange(url, e.target.value)}
+                  >
+                    <option value="">Use default topic</option>
+                    {serviceTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+          {photoPool.length > 12 && (
+            <p className="muted small" style={{ marginTop: 8 }}>
+              Showing first 12 images from the photo pool.
+            </p>
+          )}
+        </div>
+      ) : null}
       <div className="panel-section">
         <label className="field-label">Photo URL</label>
         <input

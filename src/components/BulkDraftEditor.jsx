@@ -34,6 +34,8 @@ export default function BulkDraftEditor({
   onUseDefaultOverlay,
   onPickOverlay,
   onClearOverlay,
+  serviceTopics,
+  onServiceTopicChange,
 }) {
   return (
     <div className="panel-section bulk-draft-shell">
@@ -50,6 +52,12 @@ export default function BulkDraftEditor({
               CTA: {activeDraftBody.cta || "—"}
             </span>
             <span>Media: {activeDraftBody.mediaUrl || "None"}</span>
+            <span>
+              Topic:{" "}
+              {activeDraftBody.serviceTopicLabel ||
+                draft.body?.serviceTopicLabel ||
+                "Default"}
+            </span>
           </div>
         </div>
         <div className="action-row">
@@ -134,6 +142,19 @@ export default function BulkDraftEditor({
               ))}
             </select>
           )}
+
+          <label className="field-label">Service topic</label>
+          <select
+            value={activeDraftBody.serviceTopicId || ""}
+            onChange={(e) => onServiceTopicChange(e.target.value)}
+          >
+            <option value="">Use default topic</option>
+            {serviceTopics.map((topic) => (
+              <option key={topic.id} value={topic.id}>
+                {topic.label}
+              </option>
+            ))}
+          </select>
 
           <label className="field-label">Media URL</label>
           <input
