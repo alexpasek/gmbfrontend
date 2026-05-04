@@ -2909,7 +2909,12 @@ export default function App() {
         category: photoCategory,
       });
       setLastPhotoPostResult(result?.result || null);
-      notify("Photo accepted by GBP media API");
+      const fallback = result?.result?.categoryFallback;
+      notify(
+        fallback
+          ? `Photo accepted by GBP using ${fallback.used} category`
+          : "Photo accepted by GBP media API"
+      );
       setPhotoSchedulerStatus("posted");
       await loadPhotoJobs();
       await fetchLatestPhotos();
@@ -5087,6 +5092,13 @@ export default function App() {
                     <div className="diag-card">
                       <div className="muted small">Google media name</div>
                       <strong>{lastPhotoPostResult.name || "Accepted"}</strong>
+                      {lastPhotoPostResult.categoryFallback ? (
+                        <div className="muted small" style={{ marginTop: 6 }}>
+                          Google rejected{" "}
+                          {lastPhotoPostResult.categoryFallback.requested}; app
+                          retried as {lastPhotoPostResult.categoryFallback.used}.
+                        </div>
+                      ) : null}
                       {lastPhotoPostResult.googleUrl ? (
                         <div style={{ marginTop: 8 }}>
                           <a
