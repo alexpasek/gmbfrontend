@@ -282,8 +282,14 @@ const api = {
     const qs = `?profileId=${encodeURIComponent(profileId || "")}&limit=${limit}&pages=${pages}`;
     return doFetch(`/photo-latest-debug${qs}`);
   },
-  async getPerformance(profileId, days = 30) {
-    const qs = `?profileId=${encodeURIComponent(profileId || "")}&days=${encodeURIComponent(days)}`;
+  async getPerformance(profileId, days = 30, options = {}) {
+    const params = new URLSearchParams({
+      profileId: profileId || "",
+      days: String(days || 30),
+    });
+    if (options.startMonth) params.set("startMonth", options.startMonth);
+    if (options.endMonth) params.set("endMonth", options.endMonth);
+    const qs = `?${params.toString()}`;
     return doFetch(`/performance${qs}`);
   },
 };

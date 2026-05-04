@@ -1004,6 +1004,202 @@ function metricTotal(performance, metric) {
   return found ? Number(found.total || 0) : 0;
 }
 
+const VISIBILITY_METRICS = [
+  "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+  "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+  "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+  "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+];
+
+const SEARCH_VISIBILITY_METRICS = [
+  "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+  "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+];
+
+const MAPS_VISIBILITY_METRICS = [
+  "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+  "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+];
+
+const MOBILE_VISIBILITY_METRICS = [
+  "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+  "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+];
+
+const DESKTOP_VISIBILITY_METRICS = [
+  "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+  "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+];
+
+const ACTION_METRICS = [
+  "CALL_CLICKS",
+  "WEBSITE_CLICKS",
+  "BUSINESS_DIRECTION_REQUESTS",
+  "BUSINESS_CONVERSATIONS",
+];
+
+const PHOTO_CATEGORY_OPTIONS = [
+  { value: "ADDITIONAL", label: "Additional" },
+  { value: "AT_WORK", label: "At work" },
+  { value: "EXTERIOR", label: "Exterior" },
+  { value: "INTERIOR", label: "Interior" },
+  { value: "PRODUCT", label: "Product" },
+  { value: "TEAMS", label: "Team" },
+  { value: "COVER", label: "Cover photo" },
+  { value: "PROFILE", label: "Profile photo" },
+  { value: "LOGO", label: "Logo" },
+];
+
+function metricGroupTotal(performance, metrics) {
+  return metrics.reduce((sum, metric) => sum + metricTotal(performance, metric), 0);
+}
+
+function performanceValueMap(performance) {
+  const map = new Map();
+  (performance?.metrics || []).forEach((item) => {
+    (item.values || []).forEach((point) => {
+      const date = point.date || "";
+      if (!date) return;
+      if (!map.has(date)) map.set(date, {});
+      map.get(date)[item.metric] = Number(point.value || 0);
+    });
+  });
+  return Array.from(map.entries())
+    .map(([date, values]) => ({
+      date,
+      views: VISIBILITY_METRICS.reduce(
+        (sum, metric) => sum + Number(values[metric] || 0),
+        0
+      ),
+      actions: ACTION_METRICS.reduce(
+        (sum, metric) => sum + Number(values[metric] || 0),
+        0
+      ),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function percentOf(part, total) {
+  if (!total) return "0%";
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+function trendSummary(rows, key) {
+  if (!rows.length) return { first: 0, second: 0, change: 0 };
+  const split = Math.floor(rows.length / 2);
+  const firstRows = rows.slice(0, split || 1);
+  const secondRows = rows.slice(split || 1);
+  const first = firstRows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+  const second = secondRows.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+  const change = first ? ((second - first) / first) * 100 : second ? 100 : 0;
+  return { first, second, change };
+}
+
+function defaultMonthRange() {
+  const end = new Date();
+  end.setUTCDate(1);
+  end.setUTCMonth(end.getUTCMonth() - 1);
+  const start = new Date(end);
+  start.setUTCMonth(start.getUTCMonth() - 5);
+  const fmt = (date) =>
+    `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  return { start: fmt(start), end: fmt(end) };
+}
+
+function buildPerformanceSuggestions({
+  views,
+  searchViews,
+  mapsViews,
+  mobileViews,
+  desktopViews,
+  actions,
+  calls,
+  website,
+  directions,
+  messages,
+  keywords,
+  viewTrend,
+  actionTrend,
+}) {
+  const suggestions = [];
+  const actionRate = views ? actions / views : 0;
+  if (views > 0 && actionRate < 0.03) {
+    suggestions.push({
+      title: "Low conversion from profile views",
+      detail:
+        "Calls, website clicks, directions, and messages are low compared with visibility. Tighten service copy, add stronger photos, and make the primary CTA match the service intent.",
+      priority: "High",
+    });
+  }
+  if (searchViews > mapsViews * 1.5 && directions < calls + website) {
+    suggestions.push({
+      title: "Search visibility is stronger than map intent",
+      detail:
+        "Search views lead Maps views. Add service-area posts, location photos, neighbourhood wording, and keep service-area/map links in every post.",
+      priority: "High",
+    });
+  }
+  if (mapsViews > searchViews && directions === 0) {
+    suggestions.push({
+      title: "Map discovery is not turning into direction requests",
+      detail:
+        "Check address/service-area presentation, categories, hours, and whether the business should push calls instead of directions.",
+      priority: "Medium",
+    });
+  }
+  if (mobileViews > desktopViews * 2 && calls === 0) {
+    suggestions.push({
+      title: "Mobile visitors need an easier call path",
+      detail:
+        "Mobile visibility is dominant but calls are missing. Confirm the GBP phone number, Call now defaults, and phone formatting.",
+      priority: "High",
+    });
+  }
+  if (website > calls * 3 && website > directions) {
+    suggestions.push({
+      title: "Website clicks are carrying demand",
+      detail:
+        "Use tracked service landing pages, add quote forms above the fold, and mirror top search terms in page headings.",
+      priority: "Medium",
+    });
+  }
+  if (viewTrend.change < -15) {
+    suggestions.push({
+      title: "Visibility is declining",
+      detail:
+        "Increase posting cadence, refresh photos, check category relevance, and compare top search terms against current services.",
+      priority: "High",
+    });
+  }
+  if (actionTrend.change > viewTrend.change + 20) {
+    suggestions.push({
+      title: "Engagement quality is improving",
+      detail:
+        "Actions are growing faster than views. Repeat the recent post/photo topics and use those services in landing pages.",
+      priority: "Medium",
+    });
+  }
+  if (keywords?.length) {
+    const top = keywords[0]?.keyword || "";
+    suggestions.push({
+      title: "Use top search terms in content",
+      detail: top
+        ? `Top term: "${top}". Add it to service topics, captions, and related landing pages.`
+        : "Use top terms in service topics, captions, and related landing pages.",
+      priority: "Medium",
+    });
+  }
+  if (!suggestions.length) {
+    suggestions.push({
+      title: "Keep building signal",
+      detail:
+        "Metrics are balanced. Keep a steady mix of service posts, fresh photos, review links, and neighbourhood coverage.",
+      priority: "Normal",
+    });
+  }
+  return suggestions.slice(0, 6);
+}
+
 export default function App() {
   const [health, setHealth] = useState(null);
   const [version, setVersion] = useState(null);
@@ -1059,6 +1255,7 @@ export default function App() {
   const [photoSchedTime, setPhotoSchedTime] = useState("");
   const [photoSchedCadence, setPhotoSchedCadence] = useState("DAILY1");
   const [photoSchedCount, setPhotoSchedCount] = useState(3);
+  const [photoCategory, setPhotoCategory] = useState("ADDITIONAL");
   const [editingPhotoJobId, setEditingPhotoJobId] = useState("");
 
   const [schedStatus, setSchedStatus] = useState(null);
@@ -1122,9 +1319,16 @@ export default function App() {
   const [latestPhotosDebug, setLatestPhotosDebug] = useState([]);
   const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] =
     useState(false);
+  const [lastPhotoPostResult, setLastPhotoPostResult] = useState(null);
   const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
   const [performance, setPerformance] = useState(null);
   const [performanceDays, setPerformanceDays] = useState(30);
+  const [performanceMonthStart, setPerformanceMonthStart] = useState(
+    () => defaultMonthRange().start
+  );
+  const [performanceMonthEnd, setPerformanceMonthEnd] = useState(
+    () => defaultMonthRange().end
+  );
   const [performanceLoading, setPerformanceLoading] = useState(false);
   const [overlayUrl, setOverlayUrl] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -1763,7 +1967,7 @@ export default function App() {
       loadPerformance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedId, performanceDays]);
+  }, [tab, selectedId, performanceDays, performanceMonthStart, performanceMonthEnd]);
 
   useEffect(() => {
     refreshPhotoMetaSample();
@@ -2618,6 +2822,7 @@ export default function App() {
           mediaUrl,
           caption: captionText,
           meta,
+          category: photoCategory,
         },
         status: "QUEUED",
       });
@@ -2661,6 +2866,7 @@ export default function App() {
           photoSchedCaption ||
           buildAutoCaption(selectedProfile, meta, photoKeywords),
         meta,
+        category: photoCategory,
       },
     };
     try {
@@ -2696,14 +2902,17 @@ export default function App() {
       buildAutoCaption(selectedProfile, meta, photoKeywords);
     try {
       setPhotoSchedulerStatus("posting");
-      await api.postPhotoNow({
+      const result = await api.postPhotoNow({
         profileId: selectedId,
         mediaUrl: stampedUrl || mediaUrlRaw,
         caption: captionText,
+        category: photoCategory,
       });
-      notify("Photo posted to GBP library");
+      setLastPhotoPostResult(result?.result || null);
+      notify("Photo accepted by GBP media API");
       setPhotoSchedulerStatus("posted");
       await loadPhotoJobs();
+      await fetchLatestPhotos();
     } catch (e) {
       notify(e.message || "Post failed");
       setPhotoSchedulerStatus("error");
@@ -2788,7 +2997,10 @@ export default function App() {
     if (!selectedId) return notify("Select a profile first");
     setPerformanceLoading(true);
     try {
-      const result = await api.getPerformance(selectedId, performanceDays);
+      const result = await api.getPerformance(selectedId, performanceDays, {
+        startMonth: performanceMonthStart,
+        endMonth: performanceMonthEnd,
+      });
       setPerformance(result);
       notify("Loaded GBP performance");
     } catch (e) {
@@ -3498,6 +3710,56 @@ export default function App() {
   const totalProfiles = profiles.length;
   const enabledProfiles = profiles.filter((p) => !p.disabled).length;
   const disabledProfiles = totalProfiles - enabledProfiles;
+  const performanceRows = performanceValueMap(performance);
+  const performanceViews = metricGroupTotal(performance, VISIBILITY_METRICS);
+  const performanceSearchViews = metricGroupTotal(
+    performance,
+    SEARCH_VISIBILITY_METRICS
+  );
+  const performanceMapsViews = metricGroupTotal(
+    performance,
+    MAPS_VISIBILITY_METRICS
+  );
+  const performanceMobileViews = metricGroupTotal(
+    performance,
+    MOBILE_VISIBILITY_METRICS
+  );
+  const performanceDesktopViews = metricGroupTotal(
+    performance,
+    DESKTOP_VISIBILITY_METRICS
+  );
+  const performanceActions = metricGroupTotal(performance, ACTION_METRICS);
+  const performanceCalls = metricTotal(performance, "CALL_CLICKS");
+  const performanceWebsite = metricTotal(performance, "WEBSITE_CLICKS");
+  const performanceDirections = metricTotal(
+    performance,
+    "BUSINESS_DIRECTION_REQUESTS"
+  );
+  const performanceMessages = metricTotal(
+    performance,
+    "BUSINESS_CONVERSATIONS"
+  );
+  const viewTrend = trendSummary(performanceRows, "views");
+  const actionTrend = trendSummary(performanceRows, "actions");
+  const maxDailyViews = Math.max(
+    1,
+    ...performanceRows.map((row) => Number(row.views || 0))
+  );
+  const performanceSuggestions = buildPerformanceSuggestions({
+    views: performanceViews,
+    searchViews: performanceSearchViews,
+    mapsViews: performanceMapsViews,
+    mobileViews: performanceMobileViews,
+    desktopViews: performanceDesktopViews,
+    actions: performanceActions,
+    calls: performanceCalls,
+    website: performanceWebsite,
+    directions: performanceDirections,
+    messages: performanceMessages,
+    keywords: performance?.keywords?.items || [],
+    viewTrend,
+    actionTrend,
+  });
 
   return (
     <div className="shell">
@@ -4225,6 +4487,24 @@ export default function App() {
                   />
                 </div>
                 <div className="panel-section">
+                  <label className="field-label">GBP photo category</label>
+                  <select
+                    value={photoCategory}
+                    onChange={(e) => setPhotoCategory(e.target.value)}
+                  >
+                    {PHOTO_CATEGORY_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="muted small">
+                    Photo uploads appear in the Business Profile photo library,
+                    not in Updates/Posts. Google may take a few minutes to
+                    review and show them publicly.
+                  </p>
+                </div>
+                <div className="panel-section">
                   <div className="panel-subsection__header">
                     <span className="field-label">
                       Photo metadata (used for EXIF & scheduling)
@@ -4801,6 +5081,45 @@ export default function App() {
                     was uploaded.
                   </p>
                 </div>
+                {lastPhotoPostResult ? (
+                  <div className="panel-section">
+                    <div className="panel-subtitle">Last accepted GBP photo</div>
+                    <div className="diag-card">
+                      <div className="muted small">Google media name</div>
+                      <strong>{lastPhotoPostResult.name || "Accepted"}</strong>
+                      {lastPhotoPostResult.googleUrl ? (
+                        <div style={{ marginTop: 8 }}>
+                          <a
+                            href={lastPhotoPostResult.googleUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Open Google photo URL
+                          </a>
+                        </div>
+                      ) : null}
+                      {lastPhotoPostResult.thumbnailUrl ? (
+                        <div className="media-preview">
+                          <div className="media-preview-thumb">
+                            <img
+                              src={lastPhotoPostResult.thumbnailUrl}
+                              alt="Accepted GBP photo"
+                            />
+                          </div>
+                          <div className="media-preview-meta">
+                            <div className="media-preview-title">
+                              Google thumbnail
+                            </div>
+                            <div className="muted small">
+                              If this is visible here, Google accepted the media
+                              item. Public listing display can lag.
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 {photoPreviewMedia ? (
                   <div className="panel-section">
                     <div className="panel-subtitle">
@@ -4858,10 +5177,10 @@ export default function App() {
                           >
                             <img
                               src={
-                                (item.mediaFormat === "PHOTO" &&
-                                  item.sourceUrl) ||
                                 item.thumbnailUrl ||
                                 item.googleUrl ||
+                                (item.mediaFormat === "PHOTO" &&
+                                  item.sourceUrl) ||
                                 ""
                               }
                               alt={item.description || item.name || ""}
@@ -4898,8 +5217,8 @@ export default function App() {
                             >
                               <img
                                 src={
-                                  item.googleUrl ||
                                   item.thumbnailUrl ||
+                                  item.googleUrl ||
                                   item.sourceUrl ||
                                   ""
                                 }
@@ -5143,6 +5462,9 @@ export default function App() {
                   </p>
                 </div>
                 <div className="action-row">
+                  <label className="field-label">
+                    Daily range
+                  </label>
                   <select
                     value={performanceDays}
                     onChange={(e) => setPerformanceDays(Number(e.target.value))}
@@ -5151,6 +5473,22 @@ export default function App() {
                     <option value={30}>Last 30 days</option>
                     <option value={90}>Last 90 days</option>
                   </select>
+                  <label className="field-label">
+                    Keywords from
+                  </label>
+                  <input
+                    type="month"
+                    value={performanceMonthStart}
+                    onChange={(e) => setPerformanceMonthStart(e.target.value)}
+                  />
+                  <label className="field-label">
+                    to
+                  </label>
+                  <input
+                    type="month"
+                    value={performanceMonthEnd}
+                    onChange={(e) => setPerformanceMonthEnd(e.target.value)}
+                  />
                   <button
                     className="btn btn--blue"
                     type="button"
@@ -5166,14 +5504,7 @@ export default function App() {
                 <div className="metric-card">
                   <span>Total views</span>
                   <strong>
-                    {[
-                      "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
-                      "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
-                      "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
-                      "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
-                    ]
-                      .reduce((sum, metric) => sum + metricTotal(performance, metric), 0)
-                      .toLocaleString()}
+                    {performanceViews.toLocaleString()}
                   </strong>
                   <small>{performance?.startDate || "—"} to {performance?.endDate || "—"}</small>
                 </div>
@@ -5194,8 +5525,163 @@ export default function App() {
                 </div>
               </div>
 
+              <section className="performance-detail-grid">
+                <div className="panel">
+                  <div className="panel-title">Business analysis</div>
+                  <div className="analysis-grid">
+                    <div>
+                      <span className="muted small">Action rate</span>
+                      <strong>
+                        {performanceViews
+                          ? ((performanceActions / performanceViews) * 100).toFixed(1)
+                          : "0.0"}
+                        %
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted small">Calls per 1k views</span>
+                      <strong>
+                        {performanceViews
+                          ? ((performanceCalls / performanceViews) * 1000).toFixed(1)
+                          : "0.0"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted small">Website per 1k views</span>
+                      <strong>
+                        {performanceViews
+                          ? ((performanceWebsite / performanceViews) * 1000).toFixed(1)
+                          : "0.0"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="muted small">Best channel</span>
+                      <strong>
+                        {performanceSearchViews >= performanceMapsViews
+                          ? "Search"
+                          : "Maps"}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Action suggestions</div>
+                  <div className="suggestion-list">
+                    {performanceSuggestions.map((item) => (
+                      <div className="suggestion-card" key={item.title}>
+                        <span>{item.priority}</span>
+                        <strong>{item.title}</strong>
+                        <p>{item.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">How people found you</div>
+                  <div className="performance-bars">
+                    {[
+                      ["Google Search", performanceSearchViews],
+                      ["Google Maps", performanceMapsViews],
+                      ["Mobile", performanceMobileViews],
+                      ["Desktop", performanceDesktopViews],
+                    ].map(([label, value]) => (
+                      <div className="performance-bar-row" key={label}>
+                        <div>
+                          <strong>{label}</strong>
+                          <span>{Number(value || 0).toLocaleString()} views</span>
+                        </div>
+                        <div className="performance-bar-track">
+                          <span
+                            style={{
+                              width: percentOf(Number(value || 0), performanceViews),
+                            }}
+                          />
+                        </div>
+                        <small>{percentOf(Number(value || 0), performanceViews)}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Customer actions</div>
+                  <div className="action-metric-grid">
+                    {ACTION_METRICS.map((metric) => (
+                      <div className="action-metric" key={metric}>
+                        <span>{formatMetricName(metric)}</span>
+                        <strong>{metricTotal(performance, metric).toLocaleString()}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="muted small">
+                    Action rate: {performanceViews
+                      ? ((performanceActions / performanceViews) * 100).toFixed(1)
+                      : "0.0"}% of profile views.
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Trend</div>
+                  <div className="trend-grid">
+                    <div>
+                      <span className="muted small">Views, first half</span>
+                      <strong>{viewTrend.first.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="muted small">Views, second half</span>
+                      <strong>{viewTrend.second.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="muted small">View change</span>
+                      <strong>{viewTrend.change.toFixed(1)}%</strong>
+                    </div>
+                    <div>
+                      <span className="muted small">Action change</span>
+                      <strong>{actionTrend.change.toFixed(1)}%</strong>
+                    </div>
+                  </div>
+                  <div className="daily-chart">
+                    {performanceRows.slice(-30).map((row) => (
+                      <span
+                        key={row.date}
+                        title={`${row.date}: ${row.views} views, ${row.actions} actions`}
+                        style={{
+                          height: `${Math.max(8, Math.round((row.views / maxDailyViews) * 90))}px`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Search terms</div>
+                  <p className="muted small">
+                    Monthly keywords from Google Search and Maps, {performance?.keywords?.startMonth || "—"} to {performance?.keywords?.endMonth || "—"}.
+                  </p>
+                  {performance?.keywordError ? (
+                    <div className="error-text small">{performance.keywordError}</div>
+                  ) : null}
+                  {performance?.keywords?.items?.length ? (
+                    <div className="keyword-list">
+                      {performance.keywords.items.slice(0, 15).map((item) => (
+                        <div className="keyword-row" key={item.keyword}>
+                          <span>{item.keyword}</span>
+                          <strong>
+                            {item.threshold ? `< ${item.threshold}` : item.value.toLocaleString()}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="muted small">No keyword data returned yet.</div>
+                  )}
+                </div>
+              </section>
+
               <div className="panel">
-                <div className="panel-title">Metric breakdown</div>
+                <div className="panel-title">Detailed metric breakdown</div>
                 {!performance && !performanceLoading ? (
                   <div className="muted small">Click Refresh to load performance metrics.</div>
                 ) : null}

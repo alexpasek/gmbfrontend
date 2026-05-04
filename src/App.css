@@ -339,7 +339,8 @@ body {
     .dashboard-metrics,
     .workflow-grid,
     .api-capability-grid,
-    .performance-kpi-grid {
+    .performance-kpi-grid,
+    .performance-detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .performance-toolbar {
@@ -352,7 +353,11 @@ body {
     .dashboard-metrics,
     .workflow-grid,
     .api-capability-grid,
-    .performance-kpi-grid {
+    .performance-kpi-grid,
+    .performance-detail-grid {
+        grid-template-columns: 1fr;
+    }
+    .performance-bar-row {
         grid-template-columns: 1fr;
     }
 }
@@ -640,8 +645,150 @@ body {
     gap: 12px;
 }
 
+.performance-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
 .performance-table-wrap {
     overflow-x: auto;
+}
+
+.performance-bars,
+.keyword-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.performance-bar-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(120px, 2fr) 44px;
+    gap: 10px;
+    align-items: center;
+}
+
+.performance-bar-row div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.performance-bar-row div:first-child span,
+.performance-bar-row small {
+    color: #94a3b8;
+    font-size: 0.78rem;
+}
+
+.performance-bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(51, 65, 85, 0.9);
+    overflow: hidden;
+}
+
+.performance-bar-track span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8, #22c55e);
+}
+
+.action-metric-grid,
+.trend-grid,
+.analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.action-metric,
+.trend-grid > div,
+.analysis-grid > div {
+    padding: 10px;
+    border: 1px solid rgba(71, 85, 105, 0.9);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.62);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.action-metric span {
+    color: #94a3b8;
+    font-size: 0.78rem;
+}
+
+.action-metric strong,
+.trend-grid strong,
+.analysis-grid strong {
+    font-size: 1.15rem;
+}
+
+.suggestion-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.suggestion-card {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid rgba(71, 85, 105, 0.9);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.62);
+}
+
+.suggestion-card span {
+    width: max-content;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.16);
+    color: #bfdbfe;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.suggestion-card p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 0.84rem;
+    line-height: 1.42;
+}
+
+.daily-chart {
+    height: 108px;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(51, 65, 85, 0.9);
+}
+
+.daily-chart span {
+    flex: 1;
+    min-width: 4px;
+    border-radius: 999px 999px 0 0;
+    background: linear-gradient(180deg, #60a5fa, #22c55e);
+}
+
+.keyword-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.7);
+}
+
+.keyword-row span {
+    color: #e2e8f0;
+}
+
+.keyword-row strong {
+    color: #bfdbfe;
 }
 
 .spark-row {
