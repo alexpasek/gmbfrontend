@@ -68,9 +68,13 @@ const api = {
   async getProfiles() {
     return doFetch("/profiles");
   },
-  async generatePost(profileId, serviceTopicId = "") {
+  async generatePost(profileId, serviceTopicId = "", options = {}) {
     const params = new URLSearchParams({ profileId });
     if (serviceTopicId) params.set("serviceTopicId", serviceTopicId);
+    Object.entries(options || {}).forEach(([key, value]) => {
+      const str = String(value || "").trim();
+      if (str) params.set(key, str);
+    });
     return doFetch(`/generate-post-by-profile?${params.toString()}`);
   },
   async postNow({

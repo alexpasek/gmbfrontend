@@ -2137,7 +2137,12 @@ export default function App() {
     setPreviewing(true);
     setPreviewDetails(null);
     try {
-      const r = await api.generatePost(selectedId, effectiveComposerTopicId);
+      const r = await api.generatePost(selectedId, effectiveComposerTopicId, {
+        city: photoCity || selectedProfile?.city || "",
+        neighbourhood: photoNeighbourhood || "",
+        photoKeywords,
+        photoCategories,
+      });
       if (r && r.post) {
         setPreview(r.post);
         setPostText(r.post);
@@ -3037,15 +3042,41 @@ export default function App() {
       photoGenTheme ||
       "home renovation service";
     const category = photoCategories || "drywall, ceiling finishing, interior renovation";
+    const serviceSignals = `${photoGenTheme} ${topic} ${category}`.toLowerCase();
+    const popcornFocus =
+      serviceSignals.includes("popcorn") ||
+      serviceSignals.includes("ceiling removal") ||
+      serviceSignals.includes("stucco ceiling") ||
+      serviceSignals.includes("ceiling texture");
+    const popcornScenes = [
+      "A real occupied residential room prepared for popcorn ceiling removal: plastic sheeting on walls, drop cloths over floors, ladder, scraper, pole sander, shop vacuum hose, and a ceiling with visible old popcorn texture partially removed.",
+      "Close realistic job-site view angled upward at a popcorn ceiling being removed: half textured ceiling and half scraped smooth surface, dust-control plastic, work light, compound bucket, and contractor tools visible.",
+      "Drywall finishing stage after popcorn ceiling removal: ceiling skim coat in progress, trowel marks, sanding pole, protected furniture, masking tape, and natural window light in a normal Mississauga home.",
+      "Finished popcorn ceiling removal result: smooth bright ceiling, clean edges near walls, protected room just being uncovered, ladder and paint tray in foreground, realistic phone photo perspective.",
+      "Before-and-after style single photo without text: one side shows old bumpy popcorn ceiling texture, the other side shows a smooth repaired ceiling area, with tools and plastic protection making the service obvious.",
+    ];
+    const generalScenes = [
+      "A real residential renovation job-site photo with protected floors, visible tools, and a finished interior surface.",
+      "A realistic progress photo showing prep work, repair materials, and clean workmanship in a lived-in home.",
+      "A close job-site detail photo showing surface preparation, dust control, and finishing tools.",
+    ];
+    const selectedScene = (popcornFocus ? popcornScenes : generalScenes)[
+      index % (popcornFocus ? popcornScenes.length : generalScenes.length)
+    ];
     return [
-      "Create a realistic, non-stock-looking contractor project photo for Google Business Profile SEO.",
+      "Create an ultra-realistic human-shot contractor project photo for a Google Business Profile post.",
+      "The image must look like a real phone or DSLR job-site photo, not an illustration, not a 3D render, not glossy stock photography, not a staged showroom.",
       `Business: ${profileName}.`,
       `Service theme: ${photoGenTheme || topic}.`,
       `SEO service keywords: ${topic}.`,
       `Location context: ${city}${neighbourhood ? `, ${neighbourhood}` : ""}.`,
       `Related categories: ${category}.`,
-      "Show an authentic residential renovation scene, clean workmanship, bright natural lighting, no text, no logo, no watermark, no people facing camera.",
-      "Image should be useful for GBP posts and photo library, with a professional before/after or finished-work feel.",
+      `Required scene: ${selectedScene}`,
+      "Make the service instantly recognizable when someone sees it beside Google search results: ceiling surface, popcorn/stucco texture or smooth ceiling result, dust protection, ladder, scraper/sander, compound bucket, vacuum hose, masking, and cleanup details should be visible when relevant.",
+      "Composition: ceiling should dominate the image, camera angled upward from normal room height, with realistic imperfections, natural shadows, slight lens perspective, and ordinary residential surroundings.",
+      "Human realism: a worker's hands, arms, back, or PPE can appear, but no clear face, no posing, no fake smile, no perfect model, no customer portrait.",
+      "Do not include text, logo, watermark, business card, signage, readable labels, impossible tools, warped rooms, extra fingers, distorted ladders, fake before/after labels, or overly perfect AI-looking surfaces.",
+      "The photo should help a homeowner immediately understand: this company provides popcorn ceiling removal, ceiling smoothing, dust-controlled prep, and clean finished results.",
     ].join(" ");
   }
 
