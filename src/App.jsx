@@ -627,12 +627,147 @@ const CTA_LABELS = CTA_OPTIONS.reduce((acc, item) => {
 const TABS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profiles", label: "Profiles & media" },
+  { id: "bulk", label: "Bulk access" },
   { id: "photo-scheduler", label: "Photo scheduler" },
+  { id: "scheduler", label: "Scheduler" },
+  { id: "performance", label: "Performance" },
   { id: "history", label: "Post history" },
+  { id: "api-coverage", label: "GBP API" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
 
 const TAB_IDS = new Set(TABS.map((t) => t.id));
+
+const GBP_API_CAPABILITIES = [
+  {
+    name: "Business Information",
+    status: "Live in app",
+    statusTone: "green",
+    appCoverage: "Accounts, locations, profile sync, titles, phones, categories, addresses, metadata.",
+    apiCoverage:
+      "Modern v1 location endpoints, attributes, categories, chains, Google updates, service-area data.",
+    nextStep: "Add editable attributes and Google-updated diff review before profile writes.",
+  },
+  {
+    name: "Local Posts",
+    status: "Live in app",
+    statusTone: "green",
+    appCoverage: "AI drafts, CTA posts, events, offers, queueing, posting now, post history.",
+    apiCoverage:
+      "Create, list, patch, delete, report insights, and new recurrence info for recurring posts.",
+    nextStep: "Map native RecurrenceInfo into the scheduler so GBP owns recurrence when available.",
+  },
+  {
+    name: "Media",
+    status: "Live in app",
+    statusTone: "green",
+    appCoverage: "R2 upload gallery, photo pool, photo-only uploads, scheduled photo posting.",
+    apiCoverage:
+      "Start upload, create, list, get, patch, delete, plus customer media listing.",
+    nextStep: "Expose GBP media library cleanup and customer media review in the app.",
+  },
+  {
+    name: "Reviews",
+    status: "Ready to add",
+    statusTone: "amber",
+    appCoverage: "Review links are stored for posts; review inbox is not implemented yet.",
+    apiCoverage:
+      "List/get reviews, update/delete replies, new review media items, and review reply state.",
+    nextStep: "Add a review inbox with reply status, media thumbnails, and AI reply drafts.",
+  },
+  {
+    name: "Q&A",
+    status: "Ready to add",
+    statusTone: "amber",
+    appCoverage: "No Q&A workflow yet.",
+    apiCoverage: "Create/list/patch/delete questions and list/upsert/delete answers.",
+    nextStep: "Add Q&A monitor and canned answer workflow for service questions.",
+  },
+  {
+    name: "Performance",
+    status: "Live in app",
+    statusTone: "green",
+    appCoverage: "Selected-profile daily metrics dashboard for impressions, calls, website clicks, directions, and conversations.",
+    apiCoverage:
+      "Daily metrics, multi-metric time series, and monthly search keyword impressions.",
+    nextStep: "Add monthly search keyword impressions and profile comparison views.",
+  },
+  {
+    name: "Place Actions",
+    status: "Ready to add",
+    statusTone: "amber",
+    appCoverage: "Quick links are stored locally; native place action links are not managed.",
+    apiCoverage: "Create, list, patch, get, and delete booking/order/appointment links.",
+    nextStep: "Promote service-area and booking links into native place action link management.",
+  },
+  {
+    name: "Business Calls",
+    status: "Ready to add",
+    statusTone: "amber",
+    appCoverage: "No call insights workflow yet.",
+    apiCoverage: "Manage call settings and list business call insights such as missed calls.",
+    nextStep: "Add missed-call cards when call history is enabled on eligible profiles.",
+  },
+  {
+    name: "Notifications",
+    status: "Not wired",
+    statusTone: "slate",
+    appCoverage: "Scheduler polls manually/cron; no Pub/Sub or notification settings UI.",
+    apiCoverage: "Get and update account notification settings.",
+    nextStep: "Use notifications for review and Q&A alerts instead of relying only on polling.",
+  },
+  {
+    name: "Verifications",
+    status: "Not wired",
+    statusTone: "slate",
+    appCoverage: "Diagnostics can list locations; verification workflows are not implemented.",
+    apiCoverage: "Fetch verification options, verify, complete, list verifications, voice of merchant state.",
+    nextStep: "Add read-only voice-of-merchant state to diagnostics before adding write flows.",
+  },
+  {
+    name: "Lodging",
+    status: "Specialized",
+    statusTone: "slate",
+    appCoverage: "Not needed for current contractor/service profiles unless hotel clients are added.",
+    apiCoverage: "Get/update lodging data and inspect Google-updated lodging values.",
+    nextStep: "Keep out of the main UI unless lodging profiles enter the account.",
+  },
+  {
+    name: "Food Menus",
+    status: "Specialized",
+    statusTone: "slate",
+    appCoverage: "Not needed for current service profile workflow.",
+    apiCoverage: "Food menu retrieval/update, including expanded dish photo support.",
+    nextStep: "Keep as a future module for restaurant profiles only.",
+  },
+];
+
+const DASHBOARD_WORKFLOWS = [
+  {
+    title: "Create one post",
+    detail: "Choose a profile, generate a post, attach media, preview it, then post or queue it.",
+    action: "Open composer",
+    tab: "profiles",
+  },
+  {
+    title: "Schedule photos",
+    detail: "Select gallery photos, apply geo metadata, and queue photo-only uploads.",
+    action: "Open photo scheduler",
+    tab: "photo-scheduler",
+  },
+  {
+    title: "Control automation",
+    detail: "Set cadence, run the scheduler once, and pause profiles that should not post.",
+    action: "Open scheduler",
+    tab: "scheduler",
+  },
+  {
+    title: "Check API coverage",
+    detail: "See which current GBP APIs are live, ready to add, or intentionally out of scope.",
+    action: "Open GBP API",
+    tab: "api-coverage",
+  },
+];
 
 const STORAGE_KEYS = {
   tab: "gmbviking_tab",
@@ -842,6 +977,33 @@ function buildAutoCaption(profile, meta = {}, fallbackKeywords = "") {
   return name ? `${label} — ${name}` : label;
 }
 
+const PERFORMANCE_LABELS = {
+  BUSINESS_IMPRESSIONS_DESKTOP_MAPS: "Desktop Maps",
+  BUSINESS_IMPRESSIONS_DESKTOP_SEARCH: "Desktop Search",
+  BUSINESS_IMPRESSIONS_MOBILE_MAPS: "Mobile Maps",
+  BUSINESS_IMPRESSIONS_MOBILE_SEARCH: "Mobile Search",
+  CALL_CLICKS: "Calls",
+  WEBSITE_CLICKS: "Website clicks",
+  BUSINESS_DIRECTION_REQUESTS: "Directions",
+  BUSINESS_CONVERSATIONS: "Messages",
+};
+
+function formatMetricName(metric) {
+  return (
+    PERFORMANCE_LABELS[metric] ||
+    String(metric || "")
+      .replace(/^BUSINESS_/, "")
+      .replace(/_/g, " ")
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+function metricTotal(performance, metric) {
+  const found = performance?.metrics?.find((item) => item.metric === metric);
+  return found ? Number(found.total || 0) : 0;
+}
+
 export default function App() {
   const [health, setHealth] = useState(null);
   const [version, setVersion] = useState(null);
@@ -961,6 +1123,9 @@ export default function App() {
   const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] =
     useState(false);
   const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
+  const [performance, setPerformance] = useState(null);
+  const [performanceDays, setPerformanceDays] = useState(30);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
   const [overlayUrl, setOverlayUrl] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem(STORAGE_KEYS.overlayUrl) || "";
@@ -991,7 +1156,8 @@ export default function App() {
   const schedulingBusy =
     photoSchedulerStatus === "saving" ||
     photoSchedulerStatus === "stamping" ||
-    photoSchedulerStatus === "posting";
+    photoSchedulerStatus === "posting" ||
+    photoSchedulerStatus === "running";
   const mapBoundsRef = useRef(null);
   const cityCenterRef = useRef({ lat: null, lng: null });
   const cityLookupTimer = useRef(null);
@@ -1480,6 +1646,7 @@ export default function App() {
     setAreaMapLink(d.areaMapLink || "");
     setDefaultPhone(d.phone || p?.phone || "");
     setMediaUrl(d.mediaUrl || "");
+    setOverlayUrl(d.overlayUrl || "");
     setPhotoLat(d.photoLat || "");
     setPhotoLng(d.photoLng || "");
     // Always start from the profile’s city; overrides can be re-set manually
@@ -1590,6 +1757,13 @@ export default function App() {
     loadScheduledPosts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    if (tab === "performance" && selectedId) {
+      loadPerformance();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedId, performanceDays]);
 
   useEffect(() => {
     refreshPhotoMetaSample();
@@ -2538,6 +2712,29 @@ export default function App() {
     }
   }
 
+  async function runDuePhotoQueue() {
+    try {
+      setPhotoSchedulerStatus("running");
+      const result = await api.runDueScheduledPhotos();
+      const processed = Number(result?.processed || 0);
+      const failed = Array.isArray(result?.results)
+        ? result.results.filter((item) => !item.ok).length
+        : 0;
+      notify(
+        failed
+          ? `Processed ${processed} due photo(s), ${failed} failed`
+          : `Processed ${processed} due photo(s)`
+      );
+      await loadPhotoJobs();
+      setPhotoSchedulerStatus(failed ? "error" : "saved");
+    } catch (e) {
+      notify(e.message || "Photo queue run failed");
+      setPhotoSchedulerStatus("error");
+    } finally {
+      setTimeout(() => setPhotoSchedulerStatus(""), 2500);
+    }
+  }
+
   async function deletePhotoJob(id) {
     if (!id) return;
     try {
@@ -2584,6 +2781,21 @@ export default function App() {
       notify(e.message || "Failed to load GBP photos (debug)");
     } finally {
       setLatestPhotosDebugLoading(false);
+    }
+  }
+
+  async function loadPerformance() {
+    if (!selectedId) return notify("Select a profile first");
+    setPerformanceLoading(true);
+    try {
+      const result = await api.getPerformance(selectedId, performanceDays);
+      setPerformance(result);
+      notify("Loaded GBP performance");
+    } catch (e) {
+      setPerformance(null);
+      notify(e.message || "Failed to load performance");
+    } finally {
+      setPerformanceLoading(false);
     }
   }
 
@@ -3093,6 +3305,7 @@ export default function App() {
         cta,
         linkUrl,
         mediaUrl,
+        overlayUrl,
         phone: defaultPhone,
         linkOptions: linkOptions
           .map((u) => String(u || "").trim())
@@ -3350,8 +3563,12 @@ export default function App() {
                 "Schedule photo-only uploads with geo-tag metadata."}
               {tab === "scheduler" &&
                 "Configure daily times and monitor the scheduler."}
+              {tab === "performance" &&
+                "GBP daily metrics for the selected profile."}
               {tab === "history" &&
                 "Review what was sent and how it performed."}
+              {tab === "api-coverage" &&
+                "Current Google Business Profile API coverage and next integration targets."}
               {tab === "diagnostics" &&
                 "Debug accounts, locations, and media reachability."}
             </p>
@@ -3388,70 +3605,210 @@ export default function App() {
 
         <main className="main-body">
           {tab === "dashboard" && (
-            <section className="panel-grid">
-              <div className="panel">
-                <div className="panel-title">Profiles</div>
-                <div className="stats-grid">
-                  <div>
-                    <div className="muted small">Total</div>
-                    <strong>{totalProfiles}</strong>
-                  </div>
-                  <div>
-                    <div className="muted small">Enabled</div>
-                    <strong>{enabledProfiles}</strong>
-                  </div>
-                  <div>
-                    <div className="muted small">Paused</div>
-                    <strong>{disabledProfiles}</strong>
-                  </div>
+            <section className="dashboard-stack">
+              <div className="dashboard-hero">
+                <div>
+                  <div className="dashboard-eyebrow">Command center</div>
+                  <h2>
+                    {selectedProfile?.businessName ||
+                      "Select a profile to start posting"}
+                  </h2>
+                  <p>
+                    Move through the app by task: compose posts, schedule
+                    photo uploads, control automation, then verify API health.
+                  </p>
                 </div>
-              </div>
-              <div className="panel">
-                <div className="panel-title">Scheduler</div>
-                {schedStatus ? (
-                  <div className="stats-grid">
-                    <div>
-                      <div className="muted small">Enabled</div>
-                      <strong>{schedStatus.enabled ? "Yes" : "No"}</strong>
-                    </div>
-                    <div>
-                      <div className="muted small">Default time</div>
-                      <strong>{schedStatus.defaultTime || "—"}</strong>
-                    </div>
-                    <div>
-                      <div className="muted small">Tick</div>
-                      <strong>{(schedStatus.tickSeconds || 30) + "s"}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="muted small">No scheduler status yet.</div>
-                )}
-              </div>
-              <div className="panel">
-                <div className="panel-title">Quick actions</div>
-                <div className="action-row">
+                <div className="dashboard-hero__actions">
                   <button
                     className="btn btn--blue"
-                    onClick={doPreview}
+                    type="button"
+                    onClick={() => setTab("profiles")}
                     disabled={!selectedId}
                   >
-                    Generate preview
+                    Compose
                   </button>
                   <button
                     className="btn btn--green"
-                    onClick={doPostNow}
-                    disabled={!selectedId || busy}
+                    type="button"
+                    onClick={() => setTab("photo-scheduler")}
                   >
-                    Post now
+                    Schedule photos
                   </button>
                   <button
-                    className="btn btn--indigo"
-                    onClick={runAllNow}
-                    disabled={busy}
+                    className="btn btn--ghost"
+                    type="button"
+                    onClick={() => setTab("diagnostics")}
                   >
-                    Run scheduler once
+                    Run checks
                   </button>
                 </div>
+              </div>
+
+              <div className="dashboard-metrics">
+                <div className="metric-card">
+                  <span>Profiles</span>
+                  <strong>{totalProfiles}</strong>
+                  <small>{enabledProfiles} enabled</small>
+                </div>
+                <div className="metric-card">
+                  <span>Paused</span>
+                  <strong>{disabledProfiles}</strong>
+                  <small>Excluded from posting</small>
+                </div>
+                <div className="metric-card">
+                  <span>Scheduler</span>
+                  <strong>{schedStatus?.enabled ? "On" : "Off"}</strong>
+                  <small>{schedStatus?.defaultTime || "10:00"} default</small>
+                </div>
+                <div className="metric-card">
+                  <span>Queued posts</span>
+                  <strong>{scheduledPosts.length}</strong>
+                  <small>Future post queue</small>
+                </div>
+              </div>
+
+              <div className="panel-grid panel-grid--two">
+                <div className="panel panel--full">
+                  <div className="panel-title">Workflow shortcuts</div>
+                  <div className="workflow-grid">
+                    {DASHBOARD_WORKFLOWS.map((item) => (
+                      <button
+                        key={item.title}
+                        type="button"
+                        className="workflow-card"
+                        onClick={() => setTab(item.tab)}
+                      >
+                        <span>{item.title}</span>
+                        <strong>{item.action}</strong>
+                        <small>{item.detail}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Scheduler snapshot</div>
+                  {schedStatus ? (
+                    <div className="stats-grid">
+                      <div>
+                        <div className="muted small">Enabled</div>
+                        <strong>{schedStatus.enabled ? "Yes" : "No"}</strong>
+                      </div>
+                      <div>
+                        <div className="muted small">Default time</div>
+                        <strong>{schedStatus.defaultTime || "—"}</strong>
+                      </div>
+                      <div>
+                        <div className="muted small">Tick</div>
+                        <strong>{(schedStatus.tickSeconds || 30) + "s"}</strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="muted small">No scheduler status yet.</div>
+                  )}
+                  <div className="action-row">
+                    <button
+                      className="btn btn--indigo"
+                      type="button"
+                      onClick={runAllNow}
+                      disabled={busy}
+                    >
+                      Run once
+                    </button>
+                    <button
+                      className="btn btn--ghost"
+                      type="button"
+                      onClick={() => setTab("scheduler")}
+                    >
+                      Configure
+                    </button>
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-title">Selected profile</div>
+                  {selectedProfile ? (
+                    <>
+                      <div className="profile-summary">
+                        <strong>{selectedProfile.businessName || selectedId}</strong>
+                        <span>
+                          {selectedProfile.city || "No city"} ·{" "}
+                          {selectedProfile.disabled ? "Paused" : "Active"}
+                        </span>
+                        <small className="muted">{selectedProfile.profileId}</small>
+                      </div>
+                      <div className="action-row">
+                        <button
+                          className="btn btn--blue"
+                          type="button"
+                          onClick={doPreview}
+                          disabled={!selectedId || previewing}
+                        >
+                          {previewing ? "Generating..." : "Generate preview"}
+                        </button>
+                        <button
+                          className="btn btn--green"
+                          type="button"
+                          onClick={doPostNow}
+                          disabled={!selectedId || busy || posting}
+                        >
+                          {posting ? "Posting..." : "Post now"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="muted small">No profile selected.</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "api-coverage" && (
+            <section className="api-page">
+              <div className="panel api-summary">
+                <div>
+                  <div className="panel-title">Google Business Profile API coverage</div>
+                  <p className="muted small">
+                    Checked against the official GBP API reference and change
+                    log. Recent additions to prioritize are recurring Local
+                    Posts, review media items, review reply state, and expanded
+                    Food Menu dish photos.
+                  </p>
+                </div>
+                <div className="api-summary__meta">
+                  <span>Docs checked: 2026-05-04</span>
+                  <span>Google docs last updated: 2025-08-28</span>
+                </div>
+              </div>
+
+              <div className="api-capability-grid">
+                {GBP_API_CAPABILITIES.map((capability) => (
+                  <article className="api-card" key={capability.name}>
+                    <div className="api-card__header">
+                      <h2>{capability.name}</h2>
+                      <span
+                        className={`status-pill status-pill--${capability.statusTone}`}
+                      >
+                        {capability.status}
+                      </span>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>App today</dt>
+                        <dd>{capability.appCoverage}</dd>
+                      </div>
+                      <div>
+                        <dt>API supports</dt>
+                        <dd>{capability.apiCoverage}</dd>
+                      </div>
+                      <div>
+                        <dt>Recommended next step</dt>
+                        <dd>{capability.nextStep}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
               </div>
             </section>
           )}
@@ -4412,6 +4769,17 @@ export default function App() {
                       ? "Posting..."
                       : "Post photo now"}
                   </button>
+                  <button
+                    className="btn btn--ghost"
+                    type="button"
+                    onClick={runDuePhotoQueue}
+                    disabled={schedulingBusy}
+                    style={{ marginLeft: 8 }}
+                  >
+                    {photoSchedulerStatus === "running"
+                      ? "Running queue..."
+                      : "Run due photo queue"}
+                  </button>
                   {editingPhotoJobId ? (
                     <button
                       className="btn btn--indigo"
@@ -4760,6 +5128,123 @@ export default function App() {
                     />
                   </div>
                 )}
+              </div>
+            </section>
+          )}
+
+          {tab === "performance" && (
+            <section className="performance-page">
+              <div className="panel performance-toolbar">
+                <div>
+                  <div className="panel-title">GBP performance</div>
+                  <p className="muted small">
+                    Daily profile metrics from Google Business Profile
+                    Performance API for {selectedProfile?.businessName || "the selected profile"}.
+                  </p>
+                </div>
+                <div className="action-row">
+                  <select
+                    value={performanceDays}
+                    onChange={(e) => setPerformanceDays(Number(e.target.value))}
+                  >
+                    <option value={7}>Last 7 days</option>
+                    <option value={30}>Last 30 days</option>
+                    <option value={90}>Last 90 days</option>
+                  </select>
+                  <button
+                    className="btn btn--blue"
+                    type="button"
+                    onClick={loadPerformance}
+                    disabled={!selectedId || performanceLoading}
+                  >
+                    {performanceLoading ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="performance-kpi-grid">
+                <div className="metric-card">
+                  <span>Total views</span>
+                  <strong>
+                    {[
+                      "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+                      "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+                      "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+                      "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+                    ]
+                      .reduce((sum, metric) => sum + metricTotal(performance, metric), 0)
+                      .toLocaleString()}
+                  </strong>
+                  <small>{performance?.startDate || "—"} to {performance?.endDate || "—"}</small>
+                </div>
+                <div className="metric-card">
+                  <span>Calls</span>
+                  <strong>{metricTotal(performance, "CALL_CLICKS").toLocaleString()}</strong>
+                  <small>Call button clicks</small>
+                </div>
+                <div className="metric-card">
+                  <span>Website</span>
+                  <strong>{metricTotal(performance, "WEBSITE_CLICKS").toLocaleString()}</strong>
+                  <small>Website clicks</small>
+                </div>
+                <div className="metric-card">
+                  <span>Directions</span>
+                  <strong>{metricTotal(performance, "BUSINESS_DIRECTION_REQUESTS").toLocaleString()}</strong>
+                  <small>Direction requests</small>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-title">Metric breakdown</div>
+                {!performance && !performanceLoading ? (
+                  <div className="muted small">Click Refresh to load performance metrics.</div>
+                ) : null}
+                {performanceLoading ? (
+                  <div className="muted small">Loading performance from Google...</div>
+                ) : null}
+                {performance?.metrics?.length ? (
+                  <div className="performance-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Total</th>
+                          <th>Recent daily values</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {performance.metrics.map((item) => (
+                          <tr key={item.metric}>
+                            <td>{formatMetricName(item.metric)}</td>
+                            <td>{Number(item.total || 0).toLocaleString()}</td>
+                            <td>
+                              <div className="spark-row">
+                                {(item.values || []).slice(-14).map((point, idx) => (
+                                  <span
+                                    key={`${item.metric}-${point.date}-${idx}`}
+                                    className="spark-bar"
+                                    title={`${point.date}: ${point.value}`}
+                                    style={{
+                                      height: `${Math.max(
+                                        6,
+                                        Math.min(
+                                          42,
+                                          (Number(point.value || 0) /
+                                            Math.max(1, item.total || 1)) *
+                                            180
+                                        )
+                                      )}px`,
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
               </div>
             </section>
           )}

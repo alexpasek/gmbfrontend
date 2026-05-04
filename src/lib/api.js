@@ -263,6 +263,12 @@ const api = {
       body: JSON.stringify({ items }),
     });
   },
+  async runDueScheduledPhotos() {
+    return doFetch("/photo-scheduled/run-due", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
   async deleteScheduledPhoto(id) {
     return doFetch(`/photo-scheduled/${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -275,6 +281,10 @@ const api = {
   async getLatestPhotosDebug(profileId, limit = 20, pages = 3) {
     const qs = `?profileId=${encodeURIComponent(profileId || "")}&limit=${limit}&pages=${pages}`;
     return doFetch(`/photo-latest-debug${qs}`);
+  },
+  async getPerformance(profileId, days = 30) {
+    const qs = `?profileId=${encodeURIComponent(profileId || "")}&days=${encodeURIComponent(days)}`;
+    return doFetch(`/performance${qs}`);
   },
 };
 

@@ -50,10 +50,74 @@ export default function ProfilesLinksPanel({
   onMediaTopicChange,
   photoPool,
 }) {
+  const linkReady =
+    cta === "CALL_NOW" ? Boolean(defaultPhone || phoneCandidate) : /^https?:\/\//i.test(linkUrl || "");
+  const defaultTopic =
+    serviceTopics.find((topic) => topic.id === defaultServiceTopicId) ||
+    serviceTopics[0] ||
+    null;
+  const setupItems = [
+    {
+      label: "CTA",
+      ready: linkReady,
+      detail:
+        cta === "CALL_NOW"
+          ? defaultPhone || phoneCandidate || "Phone missing"
+          : linkUrl || "Link missing",
+    },
+    {
+      label: "Services",
+      ready: serviceTopics.length > 0,
+      detail: defaultTopic?.label || "No topic",
+    },
+    {
+      label: "Photo",
+      ready: Boolean(mediaUrl),
+      detail: mediaUrl ? "Default set" : "No default",
+    },
+    {
+      label: "Overlay",
+      ready: Boolean(overlayUrl),
+      detail: overlayUrl ? "Enabled" : "Optional",
+    },
+  ];
+
   return (
     <section className="panel">
-      <div className="panel-title">CTA & links</div>
+      <div className="profiles-panel-header">
+        <div>
+          <div className="panel-title">Profiles & media setup</div>
+          <p className="muted small">
+            Set the defaults this profile uses when generating, scheduling, and posting.
+          </p>
+        </div>
+        <button
+          className="btn btn--green btn--small"
+          onClick={saveProfileDefaults}
+          disabled={!hasProfile}
+        >
+          Save defaults
+        </button>
+      </div>
+
+      <div className="profile-setup-strip">
+        {setupItems.map((item) => (
+          <div
+            className={
+              "profile-setup-item" +
+              (item.ready ? " profile-setup-item--ready" : "")
+            }
+            key={item.label}
+          >
+            <span>{item.label}</span>
+            <strong>{item.ready ? "Ready" : "Needs setup"}</strong>
+            <small>{item.detail}</small>
+          </div>
+        ))}
+      </div>
+
       <div className="panel-section">
+        <div className="panel-subtitle">Posting action</div>
         <label className="field-label">Action button</label>
         <select value={cta} onChange={(e) => setCta(e.target.value)}>
           {ctaOptions.map((o) => (
@@ -78,6 +142,7 @@ export default function ProfilesLinksPanel({
         </p>
       </div>
       <div className="panel-section">
+        <div className="panel-subtitle">Quick links</div>
         <label className="field-label">Link</label>
         <input
           value={linkUrl}
@@ -178,7 +243,7 @@ export default function ProfilesLinksPanel({
           onAddLink={handleQuickLinksAdd}
           addDisabled={quickLinksAddDisabled}
         />
-        <div className="panel-section">
+        <div className="panel-section profile-subpanel">
           <div className="link-options__header" style={{ alignItems: "flex-start" }}>
             <span className="field-label">Overlay image (optional)</span>
             <span className="muted small">
@@ -240,7 +305,7 @@ export default function ProfilesLinksPanel({
           Regular posts don’t need geo tagging.
         </p>
       </div>
-      <div className="panel-section">
+      <div className="panel-section profile-subpanel">
         <div className="panel-subtitle">Service topics & SEO copy</div>
         <p className="muted small">
           Define every service you want AI to write about. Assign a default so manual posts and drafts stay on brand.
@@ -271,24 +336,11 @@ export default function ProfilesLinksPanel({
             No topics yet—add one above to get started.
           </div>
         ) : (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              marginTop: 12,
-            }}
-          >
+          <div className="service-topic-list">
             {serviceTopics.map((topic) => (
               <div
                 key={topic.id}
-                style={{
-                  border: "1px solid rgba(148,163,184,0.4)",
-                  borderRadius: 12,
-                  padding: 12,
-                  display: "grid",
-                  gap: 8,
-                }}
+                className="service-topic-card"
               >
                 <label className="field-label">Display name</label>
                 <input
@@ -363,76 +415,8 @@ export default function ProfilesLinksPanel({
           </div>
         )}
       </div>
-      {photoPool && photoPool.length > 0 ? (
-        <div className="panel-section">
-          <div className="panel-subtitle">Media topic defaults</div>
-          <p className="muted small">
-            Assign a service to any gallery photo. Bulk drafts will auto-select that topic whenever the photo is used.
-          </p>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {photoPool.slice(0, 12).map((item, idx) => {
-              const url = typeof item === "string" ? item : item?.url || "";
-              return (
-                <div
-                  key={`${url}-${idx}`}
-                  style={{
-                    border: "1px solid rgba(148,163,184,0.35)",
-                    borderRadius: 12,
-                    padding: 10,
-                  }}
-                >
-                  {resolveMediaPreviewUrl(url, backendBase) ? (
-                    <img
-                      src={resolveMediaPreviewUrl(url, backendBase)}
-                      alt=""
-                      style={{
-                        width: "100%",
-                        height: 120,
-                        objectFit: "cover",
-                        borderRadius: 8,
-                        marginBottom: 8,
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 120,
-                        borderRadius: 8,
-                        background: "rgba(148,163,184,0.15)",
-                        marginBottom: 8,
-                      }}
-                    />
-                  )}
-                  <select
-                    value={mediaTopics[url] || ""}
-                    onChange={(e) => onMediaTopicChange(url, e.target.value)}
-                  >
-                    <option value="">Use default topic</option>
-                    {serviceTopics.map((topic) => (
-                      <option key={topic.id} value={topic.id}>
-                        {topic.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
-          </div>
-          {photoPool.length > 12 && (
-            <p className="muted small" style={{ marginTop: 8 }}>
-              Showing first 12 images from the photo pool.
-            </p>
-          )}
-        </div>
-      ) : null}
-      <div className="panel-section">
+      <div className="panel-section profile-subpanel">
+        <div className="panel-subtitle">Default media</div>
         <label className="field-label">Photo URL</label>
         <input
           value={mediaUrl}
@@ -506,6 +490,51 @@ export default function ProfilesLinksPanel({
           </p>
         )}
       </div>
+      {photoPool && photoPool.length > 0 ? (
+        <div className="panel-section profile-subpanel">
+          <div className="panel-subtitle">Media topic defaults</div>
+          <p className="muted small">
+            Assign a service to any gallery photo. Bulk drafts will auto-select that topic whenever the photo is used.
+          </p>
+          <div className="media-topic-grid">
+            {photoPool.slice(0, 12).map((item, idx) => {
+              const url = typeof item === "string" ? item : item?.url || "";
+              return (
+                <div
+                  key={`${url}-${idx}`}
+                  className="media-topic-card"
+                >
+                  {resolveMediaPreviewUrl(url, backendBase) ? (
+                    <img
+                      src={resolveMediaPreviewUrl(url, backendBase)}
+                      alt=""
+                      className="media-topic-thumb"
+                    />
+                  ) : (
+                    <div className="media-topic-thumb media-topic-thumb--empty" />
+                  )}
+                  <select
+                    value={mediaTopics[url] || ""}
+                    onChange={(e) => onMediaTopicChange(url, e.target.value)}
+                  >
+                    <option value="">Use default topic</option>
+                    {serviceTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+          {photoPool.length > 12 && (
+            <p className="muted small" style={{ marginTop: 8 }}>
+              Showing first 12 images from the photo pool.
+            </p>
+          )}
+        </div>
+      ) : null}
       <div className="panel-section">
         <button
           className="btn btn--green full-width"
