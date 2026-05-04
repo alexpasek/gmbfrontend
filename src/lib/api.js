@@ -199,10 +199,10 @@ const api = {
       body: JSON.stringify({ profileId, serviceType, count }),
     });
   },
-  async generateImage(prompt) {
+  async generateImage(prompt, options = {}) {
     return doFetch("/ai/image", {
       method: "POST",
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, ...options }),
     });
   },
   async getScheduledPosts() {

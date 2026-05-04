@@ -1320,6 +1320,13 @@ export default function App() {
   const [latestPhotosDebugLoading, setLatestPhotosDebugLoading] =
     useState(false);
   const [lastPhotoPostResult, setLastPhotoPostResult] = useState(null);
+  const [photoGenTheme, setPhotoGenTheme] = useState("finished popcorn ceiling removal");
+  const [photoGenCount, setPhotoGenCount] = useState(3);
+  const [photoGenBusy, setPhotoGenBusy] = useState(false);
+  const [photoGenResults, setPhotoGenResults] = useState([]);
+  const [photoGenTarget, setPhotoGenTarget] = useState("profile");
+  const [photoGenQuality, setPhotoGenQuality] = useState("high");
+  const [photoGenSize, setPhotoGenSize] = useState("1536x1024");
   const [photoSelectionPreview, setPhotoSelectionPreview] = useState([]);
   const [performance, setPerformance] = useState(null);
   const [performanceDays, setPerformanceDays] = useState(30);
@@ -2964,7 +2971,7 @@ export default function App() {
     if (!selectedId) return notify("Select a profile first");
     setLatestPhotosLoading(true);
     try {
-      const res = await api.getLatestPhotos(selectedId, 10);
+      const res = await api.getLatestPhotos(selectedId, 25);
       const items = Array.isArray(res?.items) ? res.items : [];
       setLatestPhotos(items);
       notify(
@@ -3013,6 +3020,98 @@ export default function App() {
       notify(e.message || "Failed to load performance");
     } finally {
       setPerformanceLoading(false);
+    }
+  }
+
+  function buildThematicPhotoPrompt(index = 0) {
+    const profileName = selectedProfile?.businessName || "local renovation contractor";
+    const city = photoCity || selectedProfile?.city || "Mississauga";
+    const neighbourhood =
+      photoNeighbourhood ||
+      photoNeighbourhoodOptions[index % Math.max(1, photoNeighbourhoodOptions.length)] ||
+      "";
+    const topic =
+      serviceTopicMap[composerServiceTopicId]?.serviceType ||
+      serviceTopicMap[defaultServiceTopicId]?.serviceType ||
+      photoKeywords ||
+      photoGenTheme ||
+      "home renovation service";
+    const category = photoCategories || "drywall, ceiling finishing, interior renovation";
+    return [
+      "Create a realistic, non-stock-looking contractor project photo for Google Business Profile SEO.",
+      `Business: ${profileName}.`,
+      `Service theme: ${photoGenTheme || topic}.`,
+      `SEO service keywords: ${topic}.`,
+      `Location context: ${city}${neighbourhood ? `, ${neighbourhood}` : ""}.`,
+      `Related categories: ${category}.`,
+      "Show an authentic residential renovation scene, clean workmanship, bright natural lighting, no text, no logo, no watermark, no people facing camera.",
+      "Image should be useful for GBP posts and photo library, with a professional before/after or finished-work feel.",
+    ].join(" ");
+  }
+
+  async function generateThematicPhotos(targetOverride = "") {
+    if (!selectedProfile) return notify("Select a profile first");
+    const count = Math.max(1, Math.min(10, Number(photoGenCount) || 1));
+    const target = targetOverride || photoGenTarget || "profile";
+    setPhotoGenBusy(true);
+    setPhotoGenResults([]);
+    try {
+      const generated = [];
+      for (let i = 0; i < count; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        const res = await api.generateImage(buildThematicPhotoPrompt(i), {
+          quality: photoGenQuality,
+          size: photoGenSize,
+        });
+        if (res?.url) {
+          generated.push({
+            url: res.url,
+            prompt: res.prompt || buildThematicPhotoPrompt(i),
+            model: res.model || "",
+            quality: res.quality || photoGenQuality,
+            size: res.size || photoGenSize,
+          });
+        }
+      }
+      if (!generated.length) {
+        notify("No images returned");
+        return;
+      }
+      const urls = generated.map((item) => item.url);
+      setPhotoGenResults(generated);
+      if (target === "profile") {
+        await api.appendProfilePhotos(selectedProfile.profileId, urls);
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.profileId === selectedProfile.profileId
+              ? { ...p, photoPool: [...urls, ...(p.photoPool || [])] }
+              : p
+          )
+        );
+        setMediaUrl(urls[0]);
+      } else if (target === "scheduler") {
+        setPhotoSchedMediaList((prev) =>
+          Array.from(new Set([...urls, ...prev])).slice(0, 100)
+        );
+        setPhotoSchedMedia(urls[0]);
+        setTab("photo-scheduler");
+      } else if (target === "bulk") {
+        setBulkImages((prev) => [
+          ...urls.map((url) => buildBulkImageEntry(url)),
+          ...prev,
+        ].slice(0, 100));
+        setTab("history");
+      } else if (target === "post") {
+        setMediaUrl(urls[0]);
+        setPhotoGenTarget("post");
+      }
+      notify(`Generated ${generated.length} themed photo(s)`);
+      const uploads = await api.getUploadsList().catch(() => null);
+      if (uploads) setUploadsInfo(uploads);
+    } catch (e) {
+      notify(e.message || "Photo generation failed");
+    } finally {
+      setPhotoGenBusy(false);
     }
   }
 
@@ -4178,6 +4277,204 @@ export default function App() {
                 photoPool={selectedProfile?.photoPool || []}
               />
 
+              <section className="panel">
+                <div className="profiles-panel-header">
+                  <div>
+                    <div className="panel-title">Thematic photo generator</div>
+                    <p className="muted small">
+                      Generate SEO-themed images for this profile, then use them
+                      as defaults, scheduler photos, or bulk post media.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn--blue btn--small"
+                    type="button"
+                    onClick={() => generateThematicPhotos()}
+                    disabled={!selectedProfile || photoGenBusy}
+                  >
+                    {photoGenBusy ? "Generating..." : "Generate photos"}
+                  </button>
+                </div>
+                <div className="photo-generator-grid">
+                  <div>
+                    <label className="field-label">Theme / service</label>
+                    <input
+                      value={photoGenTheme}
+                      onChange={(e) => setPhotoGenTheme(e.target.value)}
+                      placeholder="popcorn ceiling removal before and after"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">How many</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={photoGenCount}
+                      onChange={(e) => setPhotoGenCount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Quality</label>
+                    <select
+                      value={photoGenQuality}
+                      onChange={(e) => setPhotoGenQuality(e.target.value)}
+                    >
+                      <option value="high">High detail</option>
+                      <option value="medium">Balanced</option>
+                      <option value="low">Fast / lower cost</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Shape</label>
+                    <select
+                      value={photoGenSize}
+                      onChange={(e) => setPhotoGenSize(e.target.value)}
+                    >
+                      <option value="1536x1024">Landscape project photo</option>
+                      <option value="1024x1024">Square profile photo</option>
+                      <option value="1024x1536">Portrait story photo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Send to</label>
+                    <select
+                      value={photoGenTarget}
+                      onChange={(e) => setPhotoGenTarget(e.target.value)}
+                    >
+                      <option value="profile">Profile media pool + default</option>
+                      <option value="scheduler">Photo scheduler list</option>
+                      <option value="bulk">Bulk drafts media</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="muted small">
+                  Prompt uses profile name, city, neighbourhoods, service
+                  topics, keywords, and categories for local SEO context.
+                </div>
+                {photoGenResults.length ? (
+                  <div className="generated-photo-grid">
+                    {photoGenResults.map((item, idx) => (
+                      <button
+                        type="button"
+                        className="generated-photo-card"
+                        key={`${item.url}-${idx}`}
+                        onClick={() => setMediaUrl(item.url)}
+                        title="Use as current default photo"
+                      >
+                        <img
+                          src={resolveMediaPreviewUrl(item.url, backendBase)}
+                          alt="Generated themed media"
+                        />
+                        <span>{item.model || "AI"} - Use as default</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="panel">
+                <div className="profiles-panel-header">
+                  <div>
+                    <div className="panel-title">AI media for post scheduler</div>
+                    <p className="muted small">
+                      Generate a thematic photo for the current post, then
+                      schedule or publish it with the post copy.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn--blue btn--small"
+                    type="button"
+                    onClick={() => generateThematicPhotos("post")}
+                    disabled={!selectedProfile || photoGenBusy}
+                  >
+                    {photoGenBusy ? "Generating..." : "Generate for post"}
+                  </button>
+                </div>
+                <div className="photo-generator-grid">
+                  <div>
+                    <label className="field-label">Theme / service</label>
+                    <input
+                      value={photoGenTheme}
+                      onChange={(e) => setPhotoGenTheme(e.target.value)}
+                      placeholder="drywall ceiling repair finished result"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">How many</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={photoGenCount}
+                      onChange={(e) => setPhotoGenCount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Quality</label>
+                    <select
+                      value={photoGenQuality}
+                      onChange={(e) => setPhotoGenQuality(e.target.value)}
+                    >
+                      <option value="high">High detail</option>
+                      <option value="medium">Balanced</option>
+                      <option value="low">Fast / lower cost</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Shape</label>
+                    <select
+                      value={photoGenSize}
+                      onChange={(e) => setPhotoGenSize(e.target.value)}
+                    >
+                      <option value="1536x1024">Landscape project photo</option>
+                      <option value="1024x1024">Square profile photo</option>
+                      <option value="1024x1536">Portrait story photo</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="action-row" style={{ marginTop: 8 }}>
+                  <button
+                    className="btn btn--ghost btn--small"
+                    type="button"
+                    onClick={() => generateThematicPhotos("bulk")}
+                    disabled={!selectedProfile || photoGenBusy}
+                  >
+                    Generate to bulk drafts
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--small"
+                    type="button"
+                    onClick={() => generateThematicPhotos("scheduler")}
+                    disabled={!selectedProfile || photoGenBusy}
+                  >
+                    Generate to photo scheduler
+                  </button>
+                  <span className="muted small">
+                    Current post media: {mediaUrl ? "selected" : "none"}
+                  </span>
+                </div>
+                {photoGenResults.length ? (
+                  <div className="generated-photo-grid">
+                    {photoGenResults.map((item, idx) => (
+                      <button
+                        type="button"
+                        className="generated-photo-card"
+                        key={`${item.url}-${idx}`}
+                        onClick={() => setMediaUrl(item.url)}
+                        title="Use as current post media"
+                      >
+                        <img
+                          src={resolveMediaPreviewUrl(item.url, backendBase)}
+                          alt="Generated post scheduler media"
+                        />
+                        <span>{item.model || "AI"} - Use for post</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+
               <SchedulePanel
                 panelRef={generateRef}
                 onPreview={doPreview}
@@ -4402,6 +4699,188 @@ export default function App() {
             <section className="panel-grid panel-grid--two">
               <div className="panel">
                 <div className="panel-title">Schedule photo uploads</div>
+                <div className="panel-section diag-card">
+                  <div className="panel-subsection__header">
+                    <div>
+                      <div className="field-label">AI photo generator</div>
+                      <div className="muted small">
+                        Create local SEO-themed project photos and send them
+                        straight into this scheduler.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn--blue btn--small"
+                      type="button"
+                      onClick={() => generateThematicPhotos("scheduler")}
+                      disabled={!selectedProfile || photoGenBusy}
+                    >
+                      {photoGenBusy ? "Generating..." : "Generate for scheduler"}
+                    </button>
+                  </div>
+                  <div className="photo-generator-grid">
+                    <div>
+                      <label className="field-label">Theme / service</label>
+                      <input
+                        value={photoGenTheme}
+                        onChange={(e) => setPhotoGenTheme(e.target.value)}
+                        placeholder="Mississauga popcorn ceiling removal"
+                      />
+                    </div>
+                    <div>
+                      <label className="field-label">How many</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={photoGenCount}
+                        onChange={(e) => setPhotoGenCount(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="field-label">Quality</label>
+                      <select
+                        value={photoGenQuality}
+                        onChange={(e) => setPhotoGenQuality(e.target.value)}
+                      >
+                        <option value="high">High detail</option>
+                        <option value="medium">Balanced</option>
+                        <option value="low">Fast / lower cost</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label">Shape</label>
+                      <select
+                        value={photoGenSize}
+                        onChange={(e) => setPhotoGenSize(e.target.value)}
+                      >
+                        <option value="1536x1024">Landscape project photo</option>
+                        <option value="1024x1024">Square profile photo</option>
+                        <option value="1024x1536">Portrait story photo</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="action-row" style={{ marginTop: 8 }}>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => generateThematicPhotos("profile")}
+                      disabled={!selectedProfile || photoGenBusy}
+                    >
+                      Generate to profile media
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => generateThematicPhotos("bulk")}
+                      disabled={!selectedProfile || photoGenBusy}
+                    >
+                      Generate to bulk drafts
+                    </button>
+                    <span className="muted small">
+                      Uses profile city, neighbourhoods, service keywords, and
+                      categories.
+                    </span>
+                  </div>
+                  {photoGenResults.length ? (
+                    <div className="generated-photo-grid">
+                      {photoGenResults.map((item, idx) => (
+                        <button
+                          type="button"
+                          className="generated-photo-card"
+                          key={`${item.url}-${idx}`}
+                          onClick={() => {
+                            setPhotoSchedMedia(item.url);
+                            setPhotoSchedMediaList((prev) =>
+                              Array.from(new Set([item.url, ...prev])).slice(
+                                0,
+                                100
+                              )
+                            );
+                          }}
+                          title="Use in photo scheduler"
+                        >
+                          <img
+                            src={resolveMediaPreviewUrl(item.url, backendBase)}
+                            alt="Generated scheduler media"
+                          />
+                          <span>{item.model || "AI"} - Use in scheduler</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                {!photoPreviewMedia ? (
+                  <div className="panel-section">
+                    <div className="panel-subsection__header">
+                      <div>
+                        <div className="field-label">Latest GBP photos</div>
+                        <div className="muted small">
+                          Check what Google currently returns for this profile.
+                        </div>
+                      </div>
+                      <div className="action-row">
+                        <button
+                          className="btn btn--ghost btn--small"
+                          type="button"
+                          onClick={fetchLatestPhotos}
+                          disabled={!selectedProfile || latestPhotosLoading}
+                        >
+                          {latestPhotosLoading
+                            ? "Loading..."
+                            : "View latest photos"}
+                        </button>
+                        <button
+                          className="btn btn--ghost btn--small"
+                          type="button"
+                          onClick={fetchLatestPhotosDebug}
+                          disabled={
+                            !selectedProfile || latestPhotosDebugLoading
+                          }
+                        >
+                          {latestPhotosDebugLoading
+                            ? "Loading..."
+                            : "Diagnostics"}
+                        </button>
+                      </div>
+                    </div>
+                    {latestPhotos.length > 0 ? (
+                      <div className="media-strip">
+                        {latestPhotos.slice(0, 8).map((item, idx) => (
+                          <div
+                            key={item.name || idx}
+                            className="media-strip__item"
+                          >
+                            <img
+                              src={
+                                item.thumbnailUrl ||
+                                item.googleUrl ||
+                                (item.mediaFormat === "PHOTO" &&
+                                  item.sourceUrl) ||
+                                ""
+                              }
+                              alt={item.description || item.name || ""}
+                              style={{
+                                width: 140,
+                                height: 140,
+                                objectFit: "cover",
+                                borderRadius: 6,
+                              }}
+                            />
+                            <div className="muted small">
+                              {item.createTime
+                                ? new Date(item.createTime).toLocaleString()
+                                : "No date"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="muted small">
+                        No latest photos loaded yet.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 <div className="panel-section">
                   <label className="field-label">Photo URL</label>
                   <input
@@ -5212,6 +5691,14 @@ export default function App() {
                             >
                               {item.description || "—"}
                             </div>
+                            <div className="muted small">
+                              {item.createTime
+                                ? new Date(item.createTime).toLocaleString()
+                                : "No date"}
+                            </div>
+                            <div className="muted small">
+                              {item.locationAssociation?.category || "No category"}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -5250,6 +5737,15 @@ export default function App() {
                                 style={{ marginTop: 4 }}
                               >
                                 {item.description || "—"}
+                              </div>
+                              <div className="muted small">
+                                {item.createTime
+                                  ? new Date(item.createTime).toLocaleString()
+                                  : "No date"}
+                              </div>
+                              <div className="muted small">
+                                {item.locationAssociation?.category ||
+                                  "No category"}
                               </div>
                             </div>
                           ))}
@@ -5869,6 +6365,103 @@ export default function App() {
                     </table>
                   )}
                 </div>
+              </div>
+              <div className="panel panel--full">
+                <div className="profiles-panel-header">
+                  <div>
+                    <div className="panel-title">Generate media for upcoming posts</div>
+                    <p className="muted small">
+                      Create a batch of themed photos from post history context,
+                      then send them straight into bulk drafts or the photo
+                      scheduler.
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn--blue btn--small"
+                    type="button"
+                    onClick={() => generateThematicPhotos(photoGenTarget)}
+                    disabled={!selectedProfile || photoGenBusy}
+                  >
+                    {photoGenBusy ? "Generating..." : "Generate media"}
+                  </button>
+                </div>
+                <div className="photo-generator-grid">
+                  <div>
+                    <label className="field-label">Post theme</label>
+                    <input
+                      value={photoGenTheme}
+                      onChange={(e) => setPhotoGenTheme(e.target.value)}
+                      placeholder="drywall repair progress photos"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Count</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={photoGenCount}
+                      onChange={(e) => setPhotoGenCount(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Quality</label>
+                    <select
+                      value={photoGenQuality}
+                      onChange={(e) => setPhotoGenQuality(e.target.value)}
+                    >
+                      <option value="high">High detail</option>
+                      <option value="medium">Balanced</option>
+                      <option value="low">Fast / lower cost</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Shape</label>
+                    <select
+                      value={photoGenSize}
+                      onChange={(e) => setPhotoGenSize(e.target.value)}
+                    >
+                      <option value="1536x1024">Landscape project photo</option>
+                      <option value="1024x1024">Square profile photo</option>
+                      <option value="1024x1536">Portrait story photo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label">Destination</label>
+                    <select
+                      value={photoGenTarget}
+                      onChange={(e) => setPhotoGenTarget(e.target.value)}
+                    >
+                      <option value="bulk">Bulk drafts media</option>
+                      <option value="scheduler">Photo scheduler list</option>
+                      <option value="profile">Profile media pool + default</option>
+                    </select>
+                  </div>
+                </div>
+                {photoGenResults.length ? (
+                  <div className="generated-photo-grid">
+                    {photoGenResults.map((item, idx) => (
+                      <button
+                        type="button"
+                        className="generated-photo-card"
+                        key={`${item.url}-${idx}`}
+                        onClick={() => {
+                          setBulkImages((prev) => [
+                            buildBulkImageEntry(item.url),
+                            ...prev,
+                          ]);
+                        }}
+                        title="Add to bulk draft media"
+                      >
+                        <img
+                          src={resolveMediaPreviewUrl(item.url, backendBase)}
+                          alt="Generated post media"
+                        />
+                        <span>{item.model || "AI"} - Add to bulk</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="panel panel--full">
                 <div className="panel-title">Bulk drafts & scheduling</div>
