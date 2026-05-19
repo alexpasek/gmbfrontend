@@ -35,6 +35,7 @@ export default function ProfilesLinksPanel({
   loadUploadsInfo,
   setMediaGalleryContext,
   setMediaGalleryOpen,
+  openMediaGallery,
   uploadingPhoto,
   handlePhotoUpload,
   saveProfileDefaults,
@@ -437,15 +438,37 @@ export default function ProfilesLinksPanel({
             type="button"
             className="btn btn--ghost btn--small"
             onClick={async () => {
-              if (!uploadsInfo) {
-                await loadUploadsInfo();
+              if (openMediaGallery) {
+                await openMediaGallery("profile");
+              } else {
+                if (!uploadsInfo) {
+                  await loadUploadsInfo();
+                }
+                setMediaGalleryContext("profile");
+                setMediaGalleryOpen(true);
               }
-              setMediaGalleryContext("profile");
-              setMediaGalleryOpen(true);
             }}
             disabled={!backendBase}
           >
             Browse gallery
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            onClick={async () => {
+              if (openMediaGallery) {
+                await openMediaGallery("profile", "ai");
+              } else {
+                if (!uploadsInfo) {
+                  await loadUploadsInfo();
+                }
+                setMediaGalleryContext("profile");
+                setMediaGalleryOpen(true);
+              }
+            }}
+            disabled={!backendBase}
+          >
+            AI gallery
           </button>
           <span className="muted small">
             {uploadingPhoto

@@ -119,6 +119,7 @@ function MediaGalleryModal({
   onClose,
   uploadsInfo,
   backendBase,
+  initialFolder = "",
   photoMeta,
   onSelect,
   onSelectMultiple,
@@ -140,9 +141,16 @@ function MediaGalleryModal({
   const [currentFolder, setCurrentFolder] = React.useState("");
   const [folderInput, setFolderInput] = React.useState("");
   const [showAllFolders, setShowAllFolders] = React.useState(true);
+  const [aiPrompt, setAiPrompt] = React.useState("");
+  const [aiCount, setAiCount] = React.useState(1);
+  const [aiGenerating, setAiGenerating] = React.useState(false);
+  const [aiGenerationProgress, setAiGenerationProgress] = React.useState("");
+  const [aiListening, setAiListening] = React.useState(false);
+  const [aiGenerateError, setAiGenerateError] = React.useState("");
   const fileInputRef = React.useRef(null);
   const notifySafe = notifyProp || (() => {});
   const lastSelectedRef = React.useRef(null);
+  const speechRef = React.useRef(null);
 
   const normalizeKey = React.useCallback((raw) => {
     const str = String(raw || "");
@@ -192,12 +200,26 @@ function MediaGalleryModal({
   React.useEffect(() => {
     const list = (uploadsInfo && (uploadsInfo.urls || uploadsInfo.files)) || [];
     const normalized = list.map(buildItem);
+    const cleanInitialFolder = normalizeFolder(initialFolder);
     setItems(normalized);
     setSelected([]);
     setPreviewUrl("");
     setUploadError("");
-    setShowAllFolders(true);
-  }, [uploadsInfo, buildItem]);
+    setCurrentFolder(cleanInitialFolder);
+    setShowAllFolders(!cleanInitialFolder);
+  }, [uploadsInfo, buildItem, initialFolder, normalizeFolder]);
+
+  React.useEffect(() => {
+    return () => {
+      if (speechRef.current) {
+        try {
+          speechRef.current.stop();
+        } catch (_e) {
+          // ignore cleanup errors
+        }
+      }
+    };
+  }, []);
 
   const folders = React.useMemo(() => {
     const set = new Set();
@@ -318,6 +340,96 @@ function MediaGalleryModal({
     setUploading(false);
   }
 
+  async function handleGenerateAiImages() {
+    const prompt = aiPrompt.trim();
+    if (!prompt) {
+      setAiGenerateError("Describe the images first.");
+      return;
+    }
+    const count = Math.max(1, Math.min(5, Number(aiCount) || 1));
+    setAiGenerating(true);
+    setAiGenerationProgress(`Starting ${count} image${count === 1 ? "" : "s"}...`);
+    setAiGenerateError("");
+    try {
+      const jobs = Array.from({ length: count }, (_, i) => {
+        const numberedPrompt =
+          count > 1
+            ? `${prompt}\n\nVariation ${i + 1} of ${count}: keep the same service and location, but use a different realistic job-site angle or stage.`
+            : prompt;
+        return api.generateImage(numberedPrompt, {
+          model: "gpt-image-1.5",
+          quality: "high",
+          size: "1536x1024",
+          folder: "ai",
+        });
+      });
+      const settled = await Promise.allSettled(jobs);
+      const generated = settled
+        .map((result) => (result.status === "fulfilled" ? result.value?.url : ""))
+        .filter(Boolean);
+      const failed = settled.length - generated.length;
+
+      if (!generated.length) {
+        setAiGenerateError("No images returned.");
+        return;
+      }
+
+      const normalized = generated.map(buildItem);
+      setItems((prev) => [...normalized, ...prev]);
+      setSelected(normalized.map((item) => item.key));
+      setCurrentFolder("ai");
+      setShowAllFolders(false);
+      setPreviewUrl(normalized[0]?.url || "");
+      if (onUploadComplete) onUploadComplete(generated);
+      notifySafe(
+        `Generated ${generated.length} AI image(s) into AI gallery` +
+          (failed ? `, ${failed} failed` : "")
+      );
+    } catch (e) {
+      setAiGenerateError(e.message || "AI image generation failed");
+    } finally {
+      setAiGenerating(false);
+      setAiGenerationProgress("");
+    }
+  }
+
+  function startVoicePrompt() {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setAiGenerateError("Voice input is not supported in this browser.");
+      return;
+    }
+    if (speechRef.current && aiListening) {
+      speechRef.current.stop();
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    speechRef.current = recognition;
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onstart = () => {
+      setAiGenerateError("");
+      setAiListening(true);
+    };
+    recognition.onend = () => setAiListening(false);
+    recognition.onerror = (event) => {
+      setAiListening(false);
+      setAiGenerateError(event?.error ? `Voice input failed: ${event.error}` : "Voice input failed");
+    };
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results || [])
+        .map((result) => result?.[0]?.transcript || "")
+        .join(" ")
+        .trim();
+      if (transcript) {
+        setAiPrompt((prev) => `${prev ? `${prev} ` : ""}${transcript}`.trim());
+      }
+    };
+    recognition.start();
+  }
+
   async function deleteSelected() {
     if (!selected.length) return;
     setDeletingMany(true);
@@ -386,6 +498,52 @@ function MediaGalleryModal({
           <button className="btn btn--ghost btn--small" onClick={onClose}>
             Close
           </button>
+        </div>
+        <div className="ai-gallery-panel">
+          <div>
+            <label className="field-label">Generate into AI gallery</label>
+            <textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="Describe what images to create. Example: realistic Mississauga popcorn ceiling removal job-site photos, plastic sheeting, scraper, skim coat, smooth finished ceiling, no text or logos."
+              rows={3}
+            />
+            {aiGenerateError ? (
+              <div className="error-text small">{aiGenerateError}</div>
+            ) : aiGenerationProgress ? (
+              <div className="muted small">{aiGenerationProgress}</div>
+            ) : (
+              <div className="muted small">
+                Uses GPT Image 1.5 high quality and saves results in the AI gallery.
+              </div>
+            )}
+          </div>
+          <div className="ai-gallery-actions">
+            <label className="field-label">Count</label>
+            <input
+              type="number"
+              min="1"
+              max="5"
+              value={aiCount}
+              onChange={(e) => setAiCount(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={startVoicePrompt}
+              disabled={aiGenerating}
+            >
+              {aiListening ? "Stop voice" : "Voice prompt"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--blue btn--small"
+              onClick={handleGenerateAiImages}
+              disabled={aiGenerating || !backendBase}
+            >
+              {aiGenerating ? "Generating..." : "Generate AI gallery"}
+            </button>
+          </div>
         </div>
         <div
           className="action-row"
@@ -1283,6 +1441,8 @@ export default function App() {
   const [uploadsInfo, setUploadsInfo] = useState(null);
   const [uploadsCheck, setUploadsCheck] = useState(null);
   const [mediaGalleryOpen, setMediaGalleryOpen] = useState(false);
+  const [mediaGalleryInitialFolder, setMediaGalleryInitialFolder] =
+    useState("");
   const linkSaveTimer = useRef(null);
   const linkInitRef = useRef(false);
   const [linkOptionsSaving, setLinkOptionsSaving] = useState(false);
@@ -3842,6 +4002,15 @@ export default function App() {
     }
   }
 
+  async function openMediaGallery(context, initialFolder = "") {
+    if (!uploadsInfo) {
+      await loadUploadsInfo();
+    }
+    setMediaGalleryContext(context);
+    setMediaGalleryInitialFolder(initialFolder);
+    setMediaGalleryOpen(true);
+  }
+
   const totalProfiles = profiles.length;
   const enabledProfiles = profiles.filter((p) => !p.disabled).length;
   const disabledProfiles = totalProfiles - enabledProfiles;
@@ -4292,6 +4461,7 @@ export default function App() {
                 loadUploadsInfo={loadUploadsInfo}
                 setMediaGalleryContext={setMediaGalleryContext}
                 setMediaGalleryOpen={setMediaGalleryOpen}
+                openMediaGallery={openMediaGallery}
                 uploadingPhoto={uploadingPhoto}
                 handlePhotoUpload={handlePhotoUpload}
                 saveProfileDefaults={saveProfileDefaults}
@@ -4978,15 +5148,16 @@ export default function App() {
                     <button
                       className="btn btn--ghost btn--small"
                       type="button"
-                      onClick={async () => {
-                        if (!uploadsInfo) {
-                          await loadUploadsInfo();
-                        }
-                        setMediaGalleryContext("photo-scheduler");
-                        setMediaGalleryOpen(true);
-                      }}
+                      onClick={() => openMediaGallery("photo-scheduler")}
                     >
                       Browse gallery
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => openMediaGallery("photo-scheduler", "ai")}
+                    >
+                      AI gallery
                     </button>
                     <span className="muted small">
                       Pick an uploaded image (auto geo-tagged on upload).
@@ -6516,16 +6687,18 @@ export default function App() {
                     <button
                       className="btn btn--ghost btn--small"
                       type="button"
-                      onClick={async () => {
-                        if (!uploadsInfo) {
-                          await loadUploadsInfo();
-                        }
-                        setMediaGalleryContext("bulk");
-                        setMediaGalleryOpen(true);
-                      }}
+                      onClick={() => openMediaGallery("bulk")}
                       disabled={!backendBase}
                     >
                       Browse gallery
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--small"
+                      type="button"
+                      onClick={() => openMediaGallery("bulk", "ai")}
+                      disabled={!backendBase}
+                    >
+                      AI gallery
                     </button>
                     <span className="muted small">
                       {uploadingPhoto
@@ -6765,9 +6938,13 @@ export default function App() {
 
         <MediaGalleryModal
           open={mediaGalleryOpen}
-          onClose={() => setMediaGalleryOpen(false)}
+          onClose={() => {
+            setMediaGalleryOpen(false);
+            setMediaGalleryInitialFolder("");
+          }}
           uploadsInfo={uploadsInfo}
           backendBase={backendBase}
+          initialFolder={mediaGalleryInitialFolder}
           photoMeta={
             mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null
           }
@@ -6793,6 +6970,7 @@ export default function App() {
               notify("Photo selected from gallery.");
             }
             setMediaGalleryOpen(false);
+            setMediaGalleryInitialFolder("");
           }}
           onSelectMultiple={(values) => {
             const list = Array.isArray(values) ? values : [];
@@ -6812,13 +6990,21 @@ export default function App() {
               const first = list[0] || "";
               if (first) setOverlayUrl(first);
               notify("Overlay selected from gallery.");
-            } else {
+            } else if (mediaGalleryContext === "photo-scheduler") {
+              const first = list[0] || "";
+              if (first) setPhotoSchedMedia(first);
+              setPhotoSchedMediaList(list.slice(0, 100));
+              notify(`${list.length} photo(s) selected for the photo scheduler.`);
+            } else if (mediaGalleryContext === "bulk") {
               const entries = list.slice(0, 50).map((url) => buildBulkImageEntry(url));
               setBulkImages(entries);
-              setMediaUrl(list[0] || "");
-              setPhotoSchedMediaList(list.slice(0, 100));
               notify(`${list.length} photo(s) selected for bulk scheduling.`);
+            } else {
+              const first = list[0] || "";
+              if (first) setMediaUrl(first);
+              notify(first ? "Default photo selected from gallery." : "No photo selected.");
             }
+            setMediaGalleryInitialFolder("");
           }}
           onPreview={(src) => setLightboxSrc(src || "")}
           onDeleteUpload={(raw) => {
