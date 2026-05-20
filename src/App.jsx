@@ -75,6 +75,11 @@ function buildPresetTopic(preset) {
     id: generateClientId("svc"),
     label: preset.label,
     serviceType: preset.serviceType,
+    primaryKeyword: preset.primaryKeyword || "",
+    cityKeyword: preset.cityKeyword || "",
+    secondaryKeywords: preset.secondaryKeywords || "",
+    nearbyAreas: preset.nearbyAreas || "",
+    landingUrl: preset.landingUrl || "",
     summary: preset.summary,
     hashtags: preset.hashtags || [],
     isDefault: false,
@@ -87,6 +92,11 @@ function createEmptyServiceTopic() {
     id: generateClientId("svc"),
     label: "New service",
     serviceType: "",
+    primaryKeyword: "",
+    cityKeyword: "",
+    secondaryKeywords: "",
+    nearbyAreas: "",
+    landingUrl: "",
     summary: "",
     hashtags: [],
     isDefault: false,
@@ -370,7 +380,8 @@ function MediaGalleryModal({
       const failed = settled.length - generated.length;
 
       if (!generated.length) {
-        setAiGenerateError("No images returned.");
+        const firstError = settled.find((result) => result.status === "rejected");
+        setAiGenerateError(formatAiImageError(firstError?.reason));
         return;
       }
 
@@ -391,6 +402,32 @@ function MediaGalleryModal({
       setAiGenerating(false);
       setAiGenerationProgress("");
     }
+  }
+
+  function formatAiImageError(error) {
+    const raw = String(error?.message || error || "").trim();
+    if (!raw) return "Image generation failed. Check OpenAI billing and image model access.";
+
+    const billingMatch = raw.match(/Billing hard limit has been reached/i);
+    if (billingMatch) {
+      return "OpenAI billing hard limit has been reached. Increase the API project billing limit, then try again.";
+    }
+
+    const jsonMatches = raw.match(/\{[\s\S]*?\}/g) || [];
+    for (const chunk of jsonMatches) {
+      try {
+        const parsed = JSON.parse(chunk);
+        const message = parsed?.error?.message || parsed?.message || "";
+        const code = parsed?.error?.code || parsed?.code || "";
+        if (message) return code ? `${message} (${code})` : message;
+      } catch (_e) {
+        // keep scanning
+      }
+    }
+
+    return raw
+      .replace(/^Request\s+\/ai\/image\s+failed:\s*/i, "")
+      .slice(0, 500);
   }
 
   function startVoicePrompt() {
@@ -3822,6 +3859,11 @@ export default function App() {
         areaMapLink: String(areaMapLink || "").trim(),
         serviceTopics: serviceTopics.map((topic) => ({
           ...topic,
+          primaryKeyword: String(topic.primaryKeyword || "").trim(),
+          cityKeyword: String(topic.cityKeyword || "").trim(),
+          secondaryKeywords: String(topic.secondaryKeywords || "").trim(),
+          nearbyAreas: String(topic.nearbyAreas || "").trim(),
+          landingUrl: String(topic.landingUrl || "").trim(),
           hashtags: Array.isArray(topic.hashtags)
             ? topic.hashtags.filter(Boolean)
             : [],

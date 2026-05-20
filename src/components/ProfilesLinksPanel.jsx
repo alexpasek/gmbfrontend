@@ -363,6 +363,62 @@ export default function ProfilesLinksPanel({
                   }
                   placeholder="Drywall repair in Calgary"
                 />
+                <label className="field-label">Landing page URL</label>
+                <input
+                  value={topic.landingUrl || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      landingUrl: e.target.value,
+                    })
+                  }
+                  placeholder="https://example.com/service/city/"
+                />
+                <div className="section-grid">
+                  <div>
+                    <label className="field-label">Primary SEO phrase</label>
+                    <input
+                      value={topic.primaryKeyword || ""}
+                      onChange={(e) =>
+                        onServiceTopicFieldChange(topic.id, {
+                          primaryKeyword: e.target.value,
+                        })
+                      }
+                      placeholder="popcorn ceiling removal Mississauga"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">City keyword</label>
+                    <input
+                      value={topic.cityKeyword || ""}
+                      onChange={(e) =>
+                        onServiceTopicFieldChange(topic.id, {
+                          cityKeyword: e.target.value,
+                        })
+                      }
+                      placeholder="Mississauga popcorn ceiling contractor"
+                    />
+                  </div>
+                </div>
+                <label className="field-label">Secondary SEO phrases</label>
+                <input
+                  value={topic.secondaryKeywords || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      secondaryKeywords: e.target.value,
+                    })
+                  }
+                  placeholder="smooth ceiling finish, stucco ceiling removal, ceiling skim coat"
+                />
+                <label className="field-label">Nearby areas</label>
+                <input
+                  value={topic.nearbyAreas || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      nearbyAreas: e.target.value,
+                    })
+                  }
+                  placeholder="Port Credit, Erin Mills, Cooksville"
+                />
                 <label className="field-label">SEO summary (optional)</label>
                 <textarea
                   value={topic.summary || ""}
@@ -372,6 +428,16 @@ export default function ProfilesLinksPanel({
                     })
                   }
                   placeholder="Describe this service so non-AI drafts can reuse it."
+                />
+                <label className="field-label">AI SEO notes</label>
+                <textarea
+                  value={topic.notes || ""}
+                  onChange={(e) =>
+                    onServiceTopicFieldChange(topic.id, {
+                      notes: e.target.value,
+                    })
+                  }
+                  placeholder="Mention condos, older homes, dust control, resale, brighter rooms, or common local concerns."
                 />
                 <label className="field-label">Hashtags</label>
                 <input
