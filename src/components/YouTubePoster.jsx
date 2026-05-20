@@ -46,6 +46,10 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
   const [thumbnailFile, setThumbnailFile] = useState(null);
   const [crossPostGbp, setCrossPostGbp] = useState(true);
   const [seo, setSeo] = useState(null);
+  const [communityPost, setCommunityPost] = useState(null);
+  const [communityImageFile, setCommunityImageFile] = useState(null);
+  const [communityImageUrl, setCommunityImageUrl] = useState("");
+  const [communityDrafts, setCommunityDrafts] = useState([]);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
@@ -54,6 +58,10 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.profileId === profileId) || null,
     [profiles, profileId]
+  );
+  const selectedChannel = useMemo(
+    () => channels.find((channel) => channel.id === channelId) || null,
+    [channels, channelId]
   );
 
   useEffect(() => {
@@ -66,6 +74,10 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
         if (!channelId && list[0]) setChannelId(list[0].id);
       })
       .catch((e) => setError(e.message || String(e)));
+    api
+      .getYoutubeCommunityDrafts(20)
+      .then((data) => setCommunityDrafts(data.drafts || []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -113,7 +125,110 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
         landingPageUrl,
       });
       setSeo(data.seo);
+      if (data.seo?.communityPostText) {
+        setCommunityPost({
+          postText: data.seo.communityPostText,
+          utmUrl: data.seo.communityPostUtmUrl,
+          hashtags: data.seo.hashtags || [],
+          websiteUrl: landingPageUrl,
+          postType: videoType,
+        });
+      }
       setStatus("SEO draft ready.");
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateCommunityPost() {
+    setBusy(true);
+    setError("");
+    setStatus("Generating YouTube Community Post draft...");
+    try {
+      const data = await api.generateYoutubeCommunityPost({
+        service,
+        city,
+        neighbourhoods: cleanNeighbourhoods(neighbourhoods),
+        postType: videoType,
+        landingPageUrl,
+        phone: selectedProfile?.phone || selectedProfile?.defaults?.phone || "",
+        website: selectedProfile?.landingUrl || landingPageUrl,
+      });
+      setCommunityPost(data.communityPost);
+      setStatus("Community Post draft ready.");
+    } catch (e) {
+      setError(e.message || String(e));
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveCommunityDraft() {
+    setBusy(true);
+    setError("");
+    setStatus("Saving Community Post draft...");
+    try {
+      const draft =
+        communityPost ||
+        (
+          await api.generateYoutubeCommunityPost({
+            service,
+            city,
+            neighbourhoods: cleanNeighbourhoods(neighbourhoods),
+            postType: videoType,
+            landingPageUrl,
+            phone: selectedProfile?.phone || selectedProfile?.defaults?.phone || "",
+            website: selectedProfile?.landingUrl || landingPageUrl,
+          })
+        ).communityPost;
+      setCommunityPost(draft);
+
+      const form = new FormData();
+      form.append("channelId", channelId);
+      form.append("service", service);
+      form.append("city", city);
+      form.append("neighbourhoods", neighbourhoods);
+      form.append("postType", videoType);
+      form.append("websiteUrl", draft.websiteUrl || landingPageUrl);
+      form.append("utmUrl", draft.utmUrl || "");
+      form.append("postText", draft.postText || "");
+      form.append("hashtags", JSON.stringify(draft.hashtags || []));
+      if (communityImageUrl) form.append("imageUrl", communityImageUrl);
+      if (communityImageFile) form.append("image", communityImageFile);
+      await api.saveYoutubeCommunityDraft(form);
+      const data = await api.getYoutubeCommunityDrafts(20);
+      setCommunityDrafts(data.drafts || []);
+      setStatus("Community Post draft saved. Copy it into YouTube Studio when ready.");
+    } catch (e) {
+      setError(e.message || String(e));
+      setStatus("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyCommunityPost(text = "") {
+    const value = text || communityPost?.postText || "";
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus("Community Post text copied.");
+    } catch (_e) {
+      setError("Copy failed. Select the text and copy it manually.");
+    }
+  }
+
+  async function markCommunityPosted(id) {
+    setBusy(true);
+    setError("");
+    try {
+      await api.markYoutubeCommunityDraftPosted(id);
+      const data = await api.getYoutubeCommunityDrafts(20);
+      setCommunityDrafts(data.drafts || []);
+      setStatus("Community Post marked as posted.");
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -170,6 +285,9 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
   }
 
   const connectUrl = apiBase ? `${apiBase}/api/google/connect-youtube` : "";
+  const studioPostsUrl = selectedChannel?.channel_id
+    ? `https://studio.youtube.com/channel/${selectedChannel.channel_id}/content/posts`
+    : "https://studio.youtube.com/";
 
   return (
     <section className="youtube-poster">
@@ -177,7 +295,7 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
         <div>
           <h2>YouTube Poster</h2>
           <p className="muted">
-            Upload one local service video, generate YouTube SEO, add UTM links, and optionally post the video link to Google Business Profile.
+            Video upload uses the official YouTube Data API. Community Posts are generated as manual drafts with copy and YouTube Studio shortcuts.
           </p>
         </div>
         <div className="youtube-poster__actions">
@@ -279,7 +397,10 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
 
           <div className="form-grid__wide youtube-poster__actions">
             <button className="btn" type="button" onClick={generateSeo} disabled={busy || !service || !city || !landingPageUrl}>
-              Generate SEO
+              Generate Video SEO
+            </button>
+            <button className="btn" type="button" onClick={generateCommunityPost} disabled={busy || !service || !city || !landingPageUrl}>
+              Generate Community Draft
             </button>
             <button className="btn btn--blue" type="button" onClick={uploadVideo} disabled={busy || !channelId || !videoFile || !service || !city || !landingPageUrl}>
               Upload to YouTube
@@ -327,6 +448,80 @@ export default function YouTubePoster({ profiles = [], selectedProfileId = "" })
                 {uploadResult.video.youtubeUrl}
               </a>
             </div>
+          )}
+        </div>
+      </div>
+
+      <div className="youtube-poster__grid">
+        <div className="panel-card youtube-preview">
+          <h3>Community Post Draft</h3>
+          <p className="muted small">
+            YouTube Community Posts are manual drafts because the official YouTube Data API does not publish them.
+          </p>
+          {communityPost ? (
+            <>
+              <label>
+                <span className="field-label">Post text</span>
+                <textarea rows={12} value={communityPost.postText || ""} onChange={(e) => setCommunityPost({ ...communityPost, postText: e.target.value })} />
+              </label>
+              <div className="youtube-preview__meta">
+                <strong>Community UTM URL</strong>
+                <a href={communityPost.utmUrl} target="_blank" rel="noreferrer">{communityPost.utmUrl}</a>
+              </div>
+            </>
+          ) : (
+            <p className="muted">Generate a Community Post draft to create copy for YouTube Studio.</p>
+          )}
+
+          <label>
+            <span className="field-label">Attach image URL</span>
+            <input value={communityImageUrl} onChange={(e) => setCommunityImageUrl(e.target.value)} placeholder="https://..." />
+          </label>
+          <label>
+            <span className="field-label">Attach image file</span>
+            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setCommunityImageFile(e.target.files?.[0] || null)} />
+          </label>
+
+          <div className="youtube-poster__actions">
+            <button className="btn" type="button" onClick={() => copyCommunityPost()} disabled={!communityPost?.postText}>
+              Copy Post Text
+            </button>
+            <a className="btn" href={studioPostsUrl} target="_blank" rel="noreferrer">
+              Open YouTube Studio Posts
+            </a>
+            <button className="btn btn--blue" type="button" onClick={saveCommunityDraft} disabled={busy || !channelId || !service || !city || !landingPageUrl}>
+              Save Draft
+            </button>
+          </div>
+        </div>
+
+        <div className="panel-card youtube-preview">
+          <h3>Saved Community Drafts</h3>
+          {communityDrafts.length ? (
+            <div className="youtube-draft-list">
+              {communityDrafts.map((draft) => (
+                <div className="youtube-draft-item" key={draft.id}>
+                  <div className="youtube-draft-item__top">
+                    <strong>{draft.service || "Community post"} {draft.city ? `- ${draft.city}` : ""}</strong>
+                    <span className="muted small">{draft.status}</span>
+                  </div>
+                  <p>{String(draft.post_text || "").slice(0, 180)}{String(draft.post_text || "").length > 180 ? "..." : ""}</p>
+                  {draft.image_url && (
+                    <a href={draft.image_url} target="_blank" rel="noreferrer">Attached image</a>
+                  )}
+                  <div className="youtube-poster__actions">
+                    <button className="btn" type="button" onClick={() => copyCommunityPost(draft.post_text)}>
+                      Copy
+                    </button>
+                    <button className="btn" type="button" onClick={() => markCommunityPosted(draft.id)} disabled={busy || draft.status === "POSTED"}>
+                      Mark as Posted
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">Saved Community Post drafts will appear here.</p>
           )}
         </div>
       </div>

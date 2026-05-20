@@ -327,6 +327,24 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+  async generateYoutubeCommunityPost(payload) {
+    return doFetch("/api/youtube/community/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async getYoutubeCommunityDrafts(limit = 25) {
+    return doFetch(`/api/youtube/community/drafts?limit=${encodeURIComponent(limit)}`);
+  },
+  async saveYoutubeCommunityDraft(formData) {
+    return doFormFetch("/api/youtube/community/drafts", formData);
+  },
+  async markYoutubeCommunityDraftPosted(id) {
+    return doFetch(`/api/youtube/community/drafts/${encodeURIComponent(id)}/mark-posted`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
   async uploadYoutubeVideo(formData) {
     return doFormFetch("/api/youtube/upload", formData);
   },
