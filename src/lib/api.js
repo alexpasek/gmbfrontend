@@ -339,6 +339,18 @@ const api = {
   async saveYoutubeCommunityDraft(formData) {
     return doFormFetch("/api/youtube/community/drafts", formData);
   },
+  async getYoutubeScheduledJobs(limit = 25) {
+    return doFetch(`/api/youtube/scheduled?limit=${encodeURIComponent(limit)}`);
+  },
+  async scheduleYoutubeJob(formData) {
+    return doFormFetch("/api/youtube/schedule", formData);
+  },
+  async runDueYoutubeJobs() {
+    return doFetch("/api/youtube/scheduled/run-due", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
   async markYoutubeCommunityDraftPosted(id) {
     return doFetch(`/api/youtube/community/drafts/${encodeURIComponent(id)}/mark-posted`, {
       method: "POST",
