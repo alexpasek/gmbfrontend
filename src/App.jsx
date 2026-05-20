@@ -15,6 +15,7 @@ import SchedulePanel from "./components/SchedulePanel";
 import BulkDraftsTable from "./components/BulkDraftsTable";
 import BulkDraftEditor from "./components/BulkDraftEditor";
 import DiagnosticsPanels from "./components/DiagnosticsPanels";
+import YouTubePoster from "./components/YouTubePoster";
 
 const DEFAULT_BACKEND_BASE = "https://gmb-automation-backend.webtoronto22.workers.dev";
 
@@ -824,6 +825,7 @@ const TABS = [
   { id: "profiles", label: "Profiles & media" },
   { id: "bulk", label: "Bulk access" },
   { id: "photo-scheduler", label: "Photo scheduler" },
+  { id: "youtube-poster", label: "YouTube poster" },
   { id: "scheduler", label: "Scheduler" },
   { id: "performance", label: "Performance" },
   { id: "history", label: "Post history" },
@@ -1465,6 +1467,7 @@ export default function App() {
 
   const [tab, setTab] = useState(() => {
     if (typeof window === "undefined") return "dashboard";
+    if (window.location.pathname === "/youtube-poster") return "youtube-poster";
     const stored = localStorage.getItem(STORAGE_KEYS.tab);
     return TAB_IDS.has(stored) ? stored : "dashboard";
   });
@@ -4169,6 +4172,8 @@ export default function App() {
                 "Toggle bulk inclusion and manage posting access."}
               {tab === "photo-scheduler" &&
                 "Schedule photo-only uploads with geo-tag metadata."}
+              {tab === "youtube-poster" &&
+                "Upload YouTube videos with local SEO and optional GBP cross-posting."}
               {tab === "scheduler" &&
                 "Configure daily times and monitor the scheduler."}
               {tab === "performance" &&
@@ -6201,6 +6206,10 @@ export default function App() {
                 )}
               </div>
             </section>
+          )}
+
+          {tab === "youtube-poster" && (
+            <YouTubePoster profiles={profiles} selectedProfileId={selectedId} />
           )}
 
           {tab === "performance" && (

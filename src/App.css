@@ -1930,3 +1930,125 @@ th {
     color: #000;
     opacity: 1;
 }
+
+.panel-card {
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.notice {
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    background: rgba(37, 99, 235, 0.12);
+    color: #dbeafe;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.notice--error {
+    border-color: rgba(248, 113, 113, 0.55);
+    background: rgba(127, 29, 29, 0.35);
+    color: #fecaca;
+}
+
+.youtube-poster {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.youtube-poster__header,
+.youtube-poster__actions,
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.youtube-poster__header {
+    justify-content: space-between;
+}
+
+.youtube-poster__header h2,
+.youtube-preview h3 {
+    margin: 0 0 6px;
+}
+
+.youtube-poster__header p {
+    margin: 0;
+}
+
+.youtube-poster__actions {
+    flex-wrap: wrap;
+}
+
+.youtube-poster__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.form-grid label,
+.youtube-preview label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-grid__wide {
+    grid-column: 1 / -1;
+}
+
+.checkbox-row {
+    flex-direction: row !important;
+    color: #e5e7eb;
+    font-size: 0.9rem;
+}
+
+.checkbox-row input {
+    width: 16px;
+    height: 16px;
+}
+
+.youtube-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.youtube-preview textarea {
+    min-height: 120px;
+}
+
+.youtube-preview__meta,
+.youtube-result {
+    display: grid;
+    gap: 5px;
+    font-size: 0.88rem;
+}
+
+.youtube-preview__meta a,
+.youtube-result a {
+    color: #93c5fd;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 980px) {
+    .youtube-poster__header,
+    .youtube-poster__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .youtube-poster__header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 720px) {
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+}

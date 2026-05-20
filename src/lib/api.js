@@ -12,8 +12,7 @@ export async function getApiBase() {
   if (typeof window !== "undefined") {
     const origin = window.location.origin;
     if (
-      origin.includes("localhost:5173") ||
-      origin.includes("127.0.0.1:5173")
+      /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/i.test(origin)
     ) {
       cachedBase = "http://127.0.0.1:8787";
     } else if (/\.pages\.dev$/i.test(origin)) {
@@ -53,6 +52,29 @@ async function doFetch(path, options = {}) {
     throw new Error(`Request ${path} failed: ${res.status} ${text}`);
   }
   if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return res.json();
+  return res.text();
+}
+
+async function doFormFetch(path, formData, options = {}) {
+  const base = await getApiBase();
+  const url = base.replace(/\/+$/, "") + path;
+  const res = await fetch(url, {
+    ...options,
+    method: options.method || "POST",
+    body: formData,
+    headers: options.headers || {},
+  });
+  if (!res.ok) {
+    let text;
+    try {
+      text = await res.text();
+    } catch {
+      text = res.statusText;
+    }
+    throw new Error(`Request ${path} failed: ${res.status} ${text}`);
+  }
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return res.json();
   return res.text();
@@ -295,6 +317,27 @@ const api = {
     if (options.endMonth) params.set("endMonth", options.endMonth);
     const qs = `?${params.toString()}`;
     return doFetch(`/performance${qs}`);
+  },
+  async getYoutubeChannels() {
+    return doFetch("/api/youtube/channels");
+  },
+  async generateYoutubeSeo(payload) {
+    return doFetch("/api/youtube/generate-seo", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  async uploadYoutubeVideo(formData) {
+    return doFormFetch("/api/youtube/upload", formData);
+  },
+  async uploadYoutubeThumbnail(formData) {
+    return doFormFetch("/api/youtube/thumbnail", formData);
+  },
+  async crossPostYoutubeToGbp(payload) {
+    return doFetch("/api/youtube/cross-post-gbp", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 };
 
