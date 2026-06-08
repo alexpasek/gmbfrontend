@@ -277,6 +277,12 @@ const api = {
       body: JSON.stringify(payload),
     });
   },
+  async updateScheduledPhoto(id, payload) {
+    return doFetch(`/photo-scheduled/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
   async postPhotoNow(payload) {
     return doFetch("/photo-now", {
       method: "POST",

@@ -2968,11 +2968,11 @@ export default function App() {
       filtered.sort(
         (a, b) => new Date(a.runAt).getTime() - new Date(b.runAt).getTime()
       );
-      const queued = filtered.filter(
-        (it) => (it.status || "QUEUED") === "QUEUED"
+      const queued = filtered.filter((it) =>
+        ["QUEUED", "PAUSED"].includes(String(it.status || "QUEUED").toUpperCase())
       );
       const history = filtered.filter(
-        (it) => (it.status || "QUEUED") !== "QUEUED"
+        (it) => !["QUEUED", "PAUSED"].includes(String(it.status || "QUEUED").toUpperCase())
       );
       setPhotoJobs(queued);
       setPhotoJobsHistory(history);
@@ -3083,8 +3083,7 @@ export default function App() {
     };
     try {
       setPhotoSchedulerStatus("saving");
-      await api.deleteScheduledPhoto(editingPhotoJobId);
-      await api.createScheduledPhoto(item);
+      await api.updateScheduledPhoto(editingPhotoJobId, item);
       setEditingPhotoJobId("");
       notify("Scheduled photo updated");
       await loadPhotoJobs();
@@ -3172,6 +3171,17 @@ export default function App() {
     }
   }
 
+  async function changePhotoJobStatus(job, status) {
+    if (!job?.id) return;
+    try {
+      await api.updateScheduledPhoto(job.id, { status });
+      notify(`Photo schedule set to ${status}`);
+      await loadPhotoJobs();
+    } catch (e) {
+      notify(e.message || "Status update failed");
+    }
+  }
+
   async function fetchLatestPhotos() {
     if (!selectedId) return notify("Select a profile first");
     setLatestPhotosLoading(true);
@@ -3249,11 +3259,11 @@ export default function App() {
       serviceSignals.includes("stucco ceiling") ||
       serviceSignals.includes("ceiling texture");
     const popcornScenes = [
-      "A real occupied residential room prepared for popcorn ceiling removal: plastic sheeting on walls, drop cloths over floors, ladder, scraper, pole sander, shop vacuum hose, and a ceiling with visible old popcorn texture partially removed.",
-      "Close realistic job-site view angled upward at a popcorn ceiling being removed: half textured ceiling and half scraped smooth surface, dust-control plastic, work light, compound bucket, and contractor tools visible.",
-      "Drywall finishing stage after popcorn ceiling removal: ceiling skim coat in progress, trowel marks, sanding pole, protected furniture, masking tape, and natural window light in a normal Mississauga home.",
-      "Finished popcorn ceiling removal result: smooth bright ceiling, clean edges near walls, protected room just being uncovered, ladder and paint tray in foreground, realistic phone photo perspective.",
-      "Before-and-after style single photo without text: one side shows old bumpy popcorn ceiling texture, the other side shows a smooth repaired ceiling area, with tools and plastic protection making the service obvious.",
+      "Top half shows a protected residential room during popcorn ceiling removal: plastic sheeting on walls, drop cloths over floors, ladder, scraper, pole sander, shop vacuum hose, and a ceiling with visible old popcorn texture partially removed.",
+      "Top half close upward angle of active popcorn ceiling removal: half bumpy textured ceiling and half scraped smooth surface, dust-control plastic, work light, compound bucket, vacuum hose, and contractor tools visible.",
+      "Top half drywall finishing stage after popcorn ceiling removal: ceiling skim coat in progress, trowel marks, sanding pole, protected furniture, masking tape, and natural window light in a normal home.",
+      "Bottom half finished popcorn ceiling removal result: smooth bright ceiling, clean edges near walls, modern living room, recessed lights or natural window light, clean professional transformed room.",
+      "Before-and-after graphic composition: old bumpy popcorn ceiling removal/prep photo above and smooth repaired ceiling result below, with tools and plastic protection making the service obvious.",
     ];
     const generalScenes = [
       "A real residential renovation job-site photo with protected floors, visible tools, and a finished interior surface.",
@@ -3263,6 +3273,29 @@ export default function App() {
     const selectedScene = (popcornFocus ? popcornScenes : generalScenes)[
       index % (popcornFocus ? popcornScenes.length : generalScenes.length)
     ];
+    const overlayHeadline = popcornFocus ? "Popcorn Ceiling Removal" : topic;
+    const overlayCity = city ? String(city).trim() : "";
+    if (popcornFocus) {
+      return [
+        "Create a square social media marketing image for a Google Business Profile post, in the same style as a professional contractor before-and-after service graphic.",
+        "Use ultra-realistic human-shot residential renovation photography, not illustration, not 3D render, not glossy stock photography, not a staged showroom.",
+        `Business: ${profileName}.`,
+        `SEO service keyword text must appear on the image, spelled exactly: "${overlayHeadline}".`,
+        overlayCity
+          ? `Add a second readable city line on the image, spelled exactly: "${overlayCity}".`
+          : "Do not invent a city; if no city is provided, use only the service keyword text.",
+        `Location context: ${city}${neighbourhood ? `, ${neighbourhood}` : ""}.`,
+        `Related categories: ${category}.`,
+        `Required scene: ${selectedScene}`,
+        "Layout: removal/prep job-site photo area above, finished smooth-ceiling room below, clean centered banner overlay between them, premium contractor advertisement look.",
+        "Text treatment: large bold white service text on a dark navy rectangular banner; city line below on a warm beige or gold rectangle; high contrast; crisp readable lettering; no misspellings.",
+        "Optional small Canadian maple leaf icon beside the city line only if it stays clean and readable.",
+        "Add this short tagline below the banner only if it is readable: CLEAN. MODERN. TRANSFORMED.",
+        "Make popcorn ceiling removal instantly recognizable: bumpy/stucco texture, scraped smooth ceiling, dust protection, ladder, scraper or sander, vacuum hose, masking tape, compound bucket, and clean finished ceiling should be visible.",
+        "Human realism: a worker's hands, arms, back, or PPE can appear, but no clear face, no posing, no fake smile, no perfect model, no customer portrait.",
+        "Avoid fake logos, watermarks, business cards, random unreadable text, impossible tools, warped rooms, extra fingers, distorted ladders, fake before/after labels, or overly perfect AI-looking surfaces.",
+      ].join(" ");
+    }
     return [
       "Create an ultra-realistic human-shot contractor project photo for a Google Business Profile post.",
       "The image must look like a real phone or DSLR job-site photo, not an illustration, not a 3D render, not glossy stock photography, not a staged showroom.",
@@ -6176,11 +6209,13 @@ export default function App() {
                     </table>
                   </div>
                 )}
-                {photoJobs.length > 0 && (
+                {photoJobs.length + photoJobsHistory.length > 0 && (
                   <div className="panel-section">
                     <div className="panel-subtitle">Scheduled calendar</div>
                     <PhotoScheduleCalendar
-                      jobs={photoJobs}
+                      jobs={photoJobs.concat(photoJobsHistory)}
+                      onChangeStatus={changePhotoJobStatus}
+                      onDeleteJob={deletePhotoJob}
                       onSelectJob={(job) => {
                         if (!job) return;
                         setEditingPhotoJobId(job.id);
