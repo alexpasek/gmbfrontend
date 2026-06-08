@@ -105,6 +105,39 @@ function createEmptyServiceTopic() {
   };
 }
 
+function buildPopcornCeilingGalleryPrompt(city = "", businessName = "", variant = "graphic") {
+  const cleanCity = String(city || "").trim();
+  const cleanBusinessName = String(businessName || "").trim();
+  const cityLine = cleanCity
+    ? `Add a second readable city line on the image, spelled exactly: "${cleanCity}".`
+    : "Do not invent a city; use only the service keyword text if no city is provided.";
+  const businessLine = cleanBusinessName
+    ? `Business context: ${cleanBusinessName}.`
+    : "Business context: local ceiling restoration contractor.";
+  const scenes = {
+    graphic:
+      "Create a square social media contractor ad like a professional before-and-after service graphic. Top half: active popcorn ceiling removal in a protected residential room with plastic sheeting, blue masking tape, drop cloths, ladder, scraper or pole sander, shop vacuum hose, compound bucket, and old bumpy/stucco texture partly removed. Bottom half: finished modern living room with smooth bright ceiling, clean edges, natural window light, and clean transformed result.",
+    removal:
+      "Create a realistic close job-site photo angled upward during popcorn ceiling removal. Show a ceiling partly covered in old bumpy popcorn/stucco texture and partly scraped smooth, with dust-control plastic, vacuum sander or scraper, ladder, work light, masking tape, drop cloths, and contractor PPE. The ceiling surface must dominate the image.",
+    finished:
+      "Create a realistic finished-result photo after popcorn ceiling removal. Show a clean modern living room with a smooth bright ceiling, sharp wall edges, natural window light, subtle renovation tools in the foreground, protected room just being uncovered, and no bumpy texture left.",
+    skim:
+      "Create a realistic drywall finishing stage after popcorn ceiling removal. Show ceiling skim coat in progress, trowel marks, sanding pole, joint compound bucket, plastic sheeting, masking tape, protected furniture, and a visible transition from repaired ceiling to smooth finish."
+  };
+  return [
+    scenes[variant] || scenes.graphic,
+    `Required image text, spelled exactly: "Popcorn Ceiling Removal".`,
+    cityLine,
+    businessLine,
+    "Text style for graphic/ad versions: large bold white service text on a dark navy rectangular banner, city line below on a warm beige or gold rectangle, crisp readable letters, no misspellings.",
+    "Optional tagline only if readable: CLEAN. MODERN. TRANSFORMED.",
+    "The only service in the image is popcorn ceiling removal, ceiling scraping, skim coating, ceiling smoothing, and clean finished ceilings.",
+    "Strict negative instruction: do not generate pest control, insects, bugs, rodents, exterminators, kitchens with pests, spray bottles for pests, traps, outdoor pest scenes, unrelated cleaning, or unrelated home services.",
+    "Avoid fake logos, watermarks, random unreadable text, business cards, warped rooms, impossible tools, extra fingers, distorted ladders, clear customer faces, and overly perfect AI-looking surfaces.",
+    "Use ultra-realistic residential renovation photography, natural light, ordinary home details, and a premium contractor marketing look."
+  ].join(" ");
+}
+
 /** Resolve a URL we can actually <img src> */
 function resolveMediaPreviewUrl(mediaUrl, backendBase) {
   if (!mediaUrl) return "";
@@ -131,6 +164,8 @@ function MediaGalleryModal({
   uploadsInfo,
   backendBase,
   initialFolder = "",
+  defaultCity = "",
+  defaultBusinessName = "",
   photoMeta,
   onSelect,
   onSelectMultiple,
@@ -152,6 +187,7 @@ function MediaGalleryModal({
   const [currentFolder, setCurrentFolder] = React.useState("");
   const [folderInput, setFolderInput] = React.useState("");
   const [showAllFolders, setShowAllFolders] = React.useState(true);
+  const [aiCity, setAiCity] = React.useState(defaultCity || "");
   const [aiPrompt, setAiPrompt] = React.useState("");
   const [aiCount, setAiCount] = React.useState(1);
   const [aiGenerating, setAiGenerating] = React.useState(false);
@@ -162,6 +198,40 @@ function MediaGalleryModal({
   const notifySafe = notifyProp || (() => {});
   const lastSelectedRef = React.useRef(null);
   const speechRef = React.useRef(null);
+  const promptCity = aiCity || defaultCity || "";
+  const popcornPromptPresets = React.useMemo(
+    () => [
+      {
+        key: "graphic",
+        label: "Ad graphic",
+        prompt: buildPopcornCeilingGalleryPrompt(promptCity, defaultBusinessName, "graphic"),
+      },
+      {
+        key: "removal",
+        label: "Removal job",
+        prompt: buildPopcornCeilingGalleryPrompt(promptCity, defaultBusinessName, "removal"),
+      },
+      {
+        key: "finished",
+        label: "Finished room",
+        prompt: buildPopcornCeilingGalleryPrompt(promptCity, defaultBusinessName, "finished"),
+      },
+      {
+        key: "skim",
+        label: "Skim coat",
+        prompt: buildPopcornCeilingGalleryPrompt(promptCity, defaultBusinessName, "skim"),
+      },
+    ],
+    [promptCity, defaultBusinessName]
+  );
+
+  React.useEffect(() => {
+    setAiCity((current) => current || defaultCity || "");
+  }, [defaultCity]);
+
+  React.useEffect(() => {
+    setAiPrompt((current) => current || popcornPromptPresets[0]?.prompt || "");
+  }, [popcornPromptPresets]);
 
   const normalizeKey = React.useCallback((raw) => {
     const str = String(raw || "");
@@ -352,11 +422,16 @@ function MediaGalleryModal({
   }
 
   async function handleGenerateAiImages() {
-    const prompt = aiPrompt.trim();
-    if (!prompt) {
+    const rawPrompt = aiPrompt.trim();
+    if (!rawPrompt) {
       setAiGenerateError("Describe the images first.");
       return;
     }
+    const prompt = [
+      rawPrompt,
+      "Final service lock: generate only popcorn ceiling removal, ceiling scraping, skim coating, ceiling smoothing, and clean finished ceiling imagery.",
+      "Do not generate pest control, insects, bugs, rodents, exterminators, pest spray, traps, outdoor pest scenes, or unrelated home services."
+    ].join("\n\n");
     const count = Math.max(1, Math.min(5, Number(aiCount) || 1));
     setAiGenerating(true);
     setAiGenerationProgress(`Starting ${count} image${count === 1 ? "" : "s"}...`);
@@ -540,10 +615,50 @@ function MediaGalleryModal({
         <div className="ai-gallery-panel">
           <div>
             <label className="field-label">Generate into AI gallery</label>
+            <div className="ai-prompt-toolbar">
+              <label className="ai-city-field">
+                <span>City on image</span>
+                <input
+                  value={aiCity}
+                  onChange={(e) => setAiCity(e.target.value)}
+                  placeholder="Mississauga"
+                  disabled={aiGenerating}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                onClick={() => {
+                  setAiPrompt(popcornPromptPresets[0]?.prompt || "");
+                  setAiGenerateError("");
+                  setAiGenerationProgress("Reset to Ad graphic prompt.");
+                }}
+                disabled={aiGenerating}
+              >
+                Reset prompt
+              </button>
+            </div>
+            <div className="ai-preset-row">
+              {popcornPromptPresets.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className="btn btn--ghost btn--small ai-preset-btn"
+                  onClick={() => {
+                    setAiPrompt(preset.prompt);
+                    setAiGenerateError("");
+                    setAiGenerationProgress(`Selected ${preset.label} prompt.`);
+                  }}
+                  disabled={aiGenerating}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <textarea
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="Describe what images to create. Example: realistic Mississauga popcorn ceiling removal job-site photos, plastic sheeting, scraper, skim coat, smooth finished ceiling, no text or logos."
+              placeholder="Choose a popcorn ceiling prompt above, or type a city/service prompt. Example: Popcorn Ceiling Removal Mississauga, before-and-after ad graphic, plastic sheeting, scraper, smooth finished ceiling, no pest control."
               rows={3}
             />
             {aiGenerateError ? (
@@ -7031,6 +7146,8 @@ export default function App() {
           uploadsInfo={uploadsInfo}
           backendBase={backendBase}
           initialFolder={mediaGalleryInitialFolder}
+          defaultCity={selectedProfile?.city || photoCity || ""}
+          defaultBusinessName={selectedProfile?.businessName || ""}
           photoMeta={
             mediaGalleryContext === "photo-scheduler" ? buildPhotoMeta : null
           }

@@ -1581,6 +1581,42 @@ th {
     min-height: 74px;
 }
 
+.ai-prompt-toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.ai-city-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+    flex: 1 1 220px;
+    color: #cbd5e1;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ai-city-field input {
+    width: 100%;
+}
+
+.ai-preset-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.ai-preset-btn {
+    min-height: 30px;
+}
+
 .ai-gallery-actions {
     display: flex;
     flex-direction: column;
