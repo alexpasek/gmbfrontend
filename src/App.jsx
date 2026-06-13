@@ -941,6 +941,7 @@ const TABS = [
   { id: "bulk", label: "Bulk access" },
   { id: "photo-scheduler", label: "Photo scheduler" },
   { id: "youtube-poster", label: "YouTube poster" },
+  { id: "blog-automation", label: "Blog automation" },
   { id: "scheduler", label: "Scheduler" },
   { id: "performance", label: "Performance" },
   { id: "history", label: "Post history" },
@@ -1572,6 +1573,8 @@ export default function App() {
 
   const [schedStatus, setSchedStatus] = useState(null);
   const [schedConfig, setSchedConfig] = useState(null);
+  const [blogAutomationStatus, setBlogAutomationStatus] = useState(null);
+  const [blogAutomationLoading, setBlogAutomationLoading] = useState(false);
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -2105,15 +2108,17 @@ export default function App() {
 
   async function bootstrap() {
     try {
-      const [h, v, pr, sc, ss] = await Promise.all([
+      const [h, v, pr, sc, ss, bas] = await Promise.all([
         api.getHealth().catch(() => null),
         api.getVersion().catch(() => null),
         api.getProfiles(),
         api.getSchedulerConfig().catch(() => null),
         api.getSchedulerStatus().catch(() => null),
+        api.getBlogAutomationStatus().catch(() => null),
       ]);
       setHealth(h);
       setVersion(v);
+      setBlogAutomationStatus(bas);
       const list = Array.isArray(pr?.profiles) ? pr.profiles : [];
       setProfiles(list);
       const storedId =
@@ -2132,9 +2137,26 @@ export default function App() {
     }
   }
 
+  async function loadBlogAutomationStatus() {
+    setBlogAutomationLoading(true);
+    try {
+      setBlogAutomationStatus(await api.getBlogAutomationStatus());
+    } catch (e) {
+      notify(e.message || "Failed to load blog automation status");
+    } finally {
+      setBlogAutomationLoading(false);
+    }
+  }
+
   useEffect(() => {
     bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (tab === "blog-automation") {
+      loadBlogAutomationStatus();
+    }
+  }, [tab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -4322,6 +4344,8 @@ export default function App() {
                 "Schedule photo-only uploads with geo-tag metadata."}
               {tab === "youtube-poster" &&
                 "Upload YouTube videos with local SEO and optional GBP cross-posting."}
+              {tab === "blog-automation" &&
+                "Monitor blog webhooks, agent self-tests, local SEO post generation, and automated GBP publishing."}
               {tab === "scheduler" &&
                 "Configure daily times and monitor the scheduler."}
               {tab === "performance" &&
@@ -4521,7 +4545,221 @@ export default function App() {
                     <div className="muted small">No profile selected.</div>
                   )}
                 </div>
+
               </div>
+            </section>
+          )}
+
+          {tab === "blog-automation" && (
+            <section className="automation-page">
+              <div className="automation-hero">
+                <div>
+                  <div className="dashboard-eyebrow">EPF Blog to GBP</div>
+                  <h2>Automation monitor</h2>
+                  <p>
+                    Small agents handle validation, routing, draft generation,
+                    posting, and logs. This page confirms each step and shows
+                    the reason when a self-test fails.
+                  </p>
+                </div>
+                <button
+                  className="btn btn--blue"
+                  type="button"
+                  onClick={loadBlogAutomationStatus}
+                  disabled={blogAutomationLoading}
+                >
+                  {blogAutomationLoading ? "Self-testing..." : "Run self-test"}
+                </button>
+              </div>
+
+              {blogAutomationStatus ? (
+                <>
+                  <div className="automation-flow">
+                    {[
+                      "Website / Blog",
+                      "Webhook received",
+                      "Validate + dedupe",
+                      "Route profile",
+                      "Generate local SEO post",
+                      "Publish to GBP",
+                    ].map((step, idx, arr) => (
+                      <React.Fragment key={step}>
+                        <div className="automation-flow-card">
+                          <span>{idx + 1}</span>
+                          <strong>{step}</strong>
+                        </div>
+                        {idx < arr.length - 1 ? (
+                          <div className="automation-arrow">→</div>
+                        ) : null}
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  <div className="dashboard-metrics">
+                    <div className="metric-card">
+                      <span>Webhook events</span>
+                      <strong>{blogAutomationStatus.totals?.events || 0}</strong>
+                      <small>{blogAutomationStatus.totals?.posted || 0} posted</small>
+                    </div>
+                    <div className="metric-card">
+                      <span>Failed</span>
+                      <strong>{blogAutomationStatus.totals?.failed || 0}</strong>
+                      <small>Stored with reason</small>
+                    </div>
+                    <div className="metric-card">
+                      <span>Batch bursts</span>
+                      <strong>{blogAutomationStatus.totals?.busyBatches || 0}</strong>
+                      <small>5+ logs in one minute</small>
+                    </div>
+                    <div className="metric-card">
+                      <span>Last status</span>
+                      <strong>{blogAutomationStatus.lastEvent?.status || "—"}</strong>
+                      <small>{blogAutomationStatus.lastEvent?.businessName || "No event"}</small>
+                    </div>
+                  </div>
+
+                  <div className="automation-agent-grid">
+                    {Object.values(blogAutomationStatus.agents || {}).map((agent) => (
+                      <div
+                        className={
+                          "automation-agent-card" +
+                          (agent.ok ? " automation-agent-card--ok" : " automation-agent-card--warn")
+                        }
+                        key={agent.label}
+                        title={`${agent.tooltip || agent.detail}\n\nConfirmation: ${agent.reason || ""}`}
+                      >
+                        <div className="automation-agent-card__top">
+                          <span>{agent.ok ? "Finished correctly" : "Needs attention"}</span>
+                          <strong>{agent.label}</strong>
+                        </div>
+                        <p>{agent.detail}</p>
+                        <small>{agent.reason || "Self-test passed."}</small>
+                        <div className="automation-tooltip">
+                          <strong>{agent.label}</strong>
+                          <span>{agent.tooltip || agent.detail}</span>
+                          <em>{agent.reason || "Self-test passed."}</em>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="automation-grid">
+                    <div className="panel">
+                      <div className="panel-title">Selected event</div>
+                      {blogAutomationStatus.lastEvent ? (
+                        <div className="automation-event-preview">
+                          <strong>{blogAutomationStatus.lastEvent.title}</strong>
+                          <span>
+                            {blogAutomationStatus.lastEvent.city || "No city"} ·{" "}
+                            {blogAutomationStatus.lastEvent.service || "No service"}
+                          </span>
+                          <p>{blogAutomationStatus.lastEvent.businessName}</p>
+                          <dl>
+                            <div>
+                              <dt>CTA city page</dt>
+                              <dd>{blogAutomationStatus.lastEvent.ctaUrl || "—"}</dd>
+                            </div>
+                            <div>
+                              <dt>Blog link in post</dt>
+                              <dd>{blogAutomationStatus.lastEvent.blogUrl || "—"}</dd>
+                            </div>
+                            <div>
+                              <dt>Local SEO</dt>
+                              <dd>{blogAutomationStatus.lastEvent.localSeo?.text || "Next post will include new local signals."}</dd>
+                            </div>
+                          </dl>
+                          {blogAutomationStatus.lastEvent.postedUrl ? (
+                            <a
+                              href={blogAutomationStatus.lastEvent.postedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open published GBP post
+                            </a>
+                          ) : null}
+                          {blogAutomationStatus.lastEvent.error ? (
+                            <div className="status-pill status-pill--red">
+                              {blogAutomationStatus.lastEvent.error}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="muted small">No webhook event yet.</div>
+                      )}
+                    </div>
+
+                    <div className="panel">
+                      <div className="panel-title">Recent automation logs</div>
+                      <div className="automation-log-list">
+                        {(blogAutomationStatus.recent || []).length ? (
+                          blogAutomationStatus.recent.map((item) => (
+                            <div className="automation-log-row" key={item.id}>
+                              <span
+                                className={
+                                  "status-pill " +
+                                  (item.status === "POSTED"
+                                    ? "status-pill--green"
+                                    : item.status === "POST_FAILED"
+                                    ? "status-pill--red"
+                                    : "status-pill--amber")
+                                }
+                              >
+                                {item.status}
+                              </span>
+                              <strong>{item.title}</strong>
+                              <small>
+                                {item.businessName || "No profile"} ·{" "}
+                                {item.receivedAt ? new Date(item.receivedAt).toLocaleString() : "—"}
+                              </small>
+                              {item.error ? <small className="status-error">{item.error}</small> : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="muted small">No logs yet.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="panel panel--full">
+                      <div className="panel-title">Batch log control</div>
+                      <p className="muted small">
+                        If five or more website webhooks arrive in the same
+                        minute, they are grouped here so the panel stays
+                        readable while every event still keeps its own result.
+                      </p>
+                      <div className="automation-batch-grid">
+                        {(blogAutomationStatus.batches || []).length ? (
+                          blogAutomationStatus.batches.map((batch) => (
+                            <div
+                              className={
+                                "automation-batch-card" +
+                                (batch.count >= 5 ? " automation-batch-card--busy" : "")
+                              }
+                              key={batch.minute}
+                            >
+                              <span>{batch.minute}</span>
+                              <strong>{batch.count} event(s)</strong>
+                              <small>
+                                {Object.entries(batch.statuses || {})
+                                  .map(([status, count]) => `${status}: ${count}`)
+                                  .join(" · ")}
+                              </small>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="muted small">No grouped batches yet.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="panel">
+                  <div className="muted small">
+                    Automation status not loaded. Run a self-test.
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

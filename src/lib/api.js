@@ -90,6 +90,9 @@ const api = {
   async getProfiles() {
     return doFetch("/profiles");
   },
+  async getBlogAutomationStatus() {
+    return doFetch("/api/webhooks/blog-created/status");
+  },
   async generatePost(profileId, serviceTopicId = "", options = {}) {
     const params = new URLSearchParams({ profileId });
     if (serviceTopicId) params.set("serviceTopicId", serviceTopicId);

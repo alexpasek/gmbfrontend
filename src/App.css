@@ -338,10 +338,18 @@ body {
     }
     .dashboard-metrics,
     .workflow-grid,
+    .automation-flow,
+    .automation-agent-grid,
+    .automation-grid,
+    .automation-batch-grid,
     .api-capability-grid,
     .performance-kpi-grid,
     .performance-detail-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .automation-hero {
+        align-items: stretch;
+        flex-direction: column;
     }
     .performance-toolbar {
         align-items: flex-start;
@@ -352,10 +360,19 @@ body {
 @media (max-width: 680px) {
     .dashboard-metrics,
     .workflow-grid,
+    .automation-flow,
+    .automation-agent-grid,
+    .automation-grid,
+    .automation-batch-grid,
     .api-capability-grid,
     .performance-kpi-grid,
     .performance-detail-grid {
         grid-template-columns: 1fr;
+    }
+    .automation-agent-card:hover .automation-tooltip,
+    .automation-agent-card:focus-within .automation-tooltip {
+        position: static;
+        margin-top: 8px;
     }
     .performance-bar-row {
         grid-template-columns: 1fr;
@@ -521,6 +538,264 @@ body {
 .profile-summary span {
     color: #cbd5e1;
     font-size: 0.86rem;
+}
+
+.automation-page {
+    display: grid;
+    gap: 16px;
+}
+
+.automation-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    border: 1px solid rgba(37, 99, 235, 0.42);
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(8, 47, 73, 0.48));
+}
+
+.automation-hero h2 {
+    margin: 0 0 4px;
+    font-size: 1.45rem;
+}
+
+.automation-hero p {
+    max-width: 780px;
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.45;
+}
+
+.automation-flow {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+}
+
+.automation-flow-card {
+    min-height: 92px;
+    border: 1px solid rgba(96, 165, 250, 0.46);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.74);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.automation-flow-card span {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2563eb;
+    color: #f8fafc;
+    font-weight: 800;
+}
+
+.automation-flow-card strong {
+    color: #f8fafc;
+    font-size: 0.92rem;
+}
+
+.automation-arrow {
+    display: none;
+}
+
+.automation-agent-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.automation-agent-card {
+    position: relative;
+    min-height: 150px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(100, 116, 139, 0.72);
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.automation-agent-card--ok {
+    border-color: rgba(34, 197, 94, 0.58);
+    background: rgba(20, 83, 45, 0.22);
+}
+
+.automation-agent-card--warn {
+    border-color: rgba(248, 113, 113, 0.72);
+    background: rgba(127, 29, 29, 0.24);
+}
+
+.automation-agent-card__top {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.automation-agent-card__top span {
+    color: #93c5fd;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.automation-agent-card__top strong {
+    color: #f8fafc;
+}
+
+.automation-agent-card p {
+    margin: 10px 0;
+    color: #cbd5e1;
+    line-height: 1.4;
+}
+
+.automation-agent-card small {
+    color: #94a3b8;
+}
+
+.automation-tooltip {
+    display: none;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: calc(100% - 4px);
+    z-index: 20;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(125, 211, 252, 0.65);
+    background: #020617;
+    box-shadow: 0 18px 35px rgba(2, 6, 23, 0.55);
+}
+
+.automation-agent-card:hover .automation-tooltip,
+.automation-agent-card:focus-within .automation-tooltip {
+    display: grid;
+    gap: 6px;
+}
+
+.automation-tooltip strong {
+    color: #f8fafc;
+}
+
+.automation-tooltip span,
+.automation-tooltip em {
+    color: #cbd5e1;
+    font-size: 0.8rem;
+    font-style: normal;
+    line-height: 1.35;
+}
+
+.automation-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px;
+}
+
+.automation-event-preview {
+    display: grid;
+    gap: 8px;
+}
+
+.automation-event-preview strong {
+    color: #f8fafc;
+}
+
+.automation-event-preview span,
+.automation-event-preview p,
+.automation-event-preview dd {
+    color: #cbd5e1;
+}
+
+.automation-event-preview dl {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.automation-event-preview dt {
+    color: #94a3b8;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    font-weight: 800;
+}
+
+.automation-event-preview dd {
+    margin: 2px 0 0;
+    overflow-wrap: anywhere;
+}
+
+.automation-log-list {
+    display: grid;
+    gap: 8px;
+}
+
+.automation-log-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(51, 65, 85, 0.86);
+    background: rgba(2, 6, 23, 0.26);
+}
+
+.automation-log-row strong,
+.automation-log-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.automation-log-row strong {
+    color: #f8fafc;
+}
+
+.automation-log-row small {
+    color: #94a3b8;
+    grid-column: 2;
+}
+
+.automation-log-row .status-error {
+    color: #fecaca;
+    white-space: normal;
+}
+
+.automation-batch-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.automation-batch-card {
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(100, 116, 139, 0.72);
+    background: rgba(15, 23, 42, 0.62);
+}
+
+.automation-batch-card--busy {
+    border-color: rgba(251, 191, 36, 0.76);
+    background: rgba(120, 53, 15, 0.28);
+}
+
+.automation-batch-card span,
+.automation-batch-card small {
+    color: #94a3b8;
+}
+
+.automation-batch-card strong {
+    color: #f8fafc;
 }
 
 
