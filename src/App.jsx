@@ -112,8 +112,8 @@ function buildPopcornCeilingGalleryPrompt(city = "", businessName = "", variant 
     ? `Add a second readable city line on the image, spelled exactly: "${cleanCity}".`
     : "Do not invent a city; use only the service keyword text if no city is provided.";
   const businessLine = cleanBusinessName
-    ? `Business context: ${cleanBusinessName}.`
-    : "Business context: local ceiling restoration contractor.";
+    ? `Business context and required small brand text: ${cleanBusinessName}.`
+    : "Business context and required small brand text: EPF Pro Services.";
   const scenes = {
     graphic:
       "Create a square social media contractor ad like a professional before-and-after service graphic. Top half: active popcorn ceiling removal in a protected residential room with plastic sheeting, blue masking tape, drop cloths, ladder, scraper or pole sander, shop vacuum hose, compound bucket, and old bumpy/stucco texture partly removed. Bottom half: finished modern living room with smooth bright ceiling, clean edges, natural window light, and clean transformed result.",
@@ -129,7 +129,8 @@ function buildPopcornCeilingGalleryPrompt(city = "", businessName = "", variant 
     `Required image text, spelled exactly: "Popcorn Ceiling Removal".`,
     cityLine,
     businessLine,
-    "Text style for graphic/ad versions: large bold white service text on a dark navy rectangular banner, city line below on a warm beige or gold rectangle, crisp readable letters, no misspellings.",
+    "Required style: top dark navy banner with large bold white SEO keyword text, warm beige/gold city strip below, and small clean EPF Pro Services brand text. The layout should match a premium contractor GBP service graphic.",
+    "Text style for graphic/ad versions: crisp readable letters, centered composition, no misspellings, no warped text.",
     "Optional tagline only if readable: CLEAN. MODERN. TRANSFORMED.",
     "The only service in the image is popcorn ceiling removal, ceiling scraping, skim coating, ceiling smoothing, and clean finished ceilings.",
     "Strict negative instruction: do not generate pest control, insects, bugs, rodents, exterminators, kitchens with pests, spray bottles for pests, traps, outdoor pest scenes, unrelated cleaning, or unrelated home services.",
@@ -1574,7 +1575,8 @@ export default function App() {
   const [schedStatus, setSchedStatus] = useState(null);
   const [schedConfig, setSchedConfig] = useState(null);
   const [blogAutomationStatus, setBlogAutomationStatus] = useState(null);
-  const [blogAutomationLoading, setBlogAutomationLoading] = useState(false);
+  const [blogAutomationAction, setBlogAutomationAction] = useState("");
+  const [blogAutomationUpdatedAt, setBlogAutomationUpdatedAt] = useState("");
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
@@ -2137,14 +2139,15 @@ export default function App() {
     }
   }
 
-  async function loadBlogAutomationStatus() {
-    setBlogAutomationLoading(true);
+  async function loadBlogAutomationStatus(action = "refresh") {
+    setBlogAutomationAction(action);
     try {
       setBlogAutomationStatus(await api.getBlogAutomationStatus());
+      setBlogAutomationUpdatedAt(new Date().toISOString());
     } catch (e) {
       notify(e.message || "Failed to load blog automation status");
     } finally {
-      setBlogAutomationLoading(false);
+      setBlogAutomationAction("");
     }
   }
 
@@ -2154,7 +2157,7 @@ export default function App() {
 
   useEffect(() => {
     if (tab === "blog-automation") {
-      loadBlogAutomationStatus();
+      loadBlogAutomationStatus("refresh");
     }
   }, [tab]);
 
@@ -4561,15 +4564,30 @@ export default function App() {
                     posting, and logs. This page confirms each step and shows
                     the reason when a self-test fails.
                   </p>
+                  {blogAutomationUpdatedAt ? (
+                    <div className="muted small">
+                      Last refreshed {new Date(blogAutomationUpdatedAt).toLocaleString()}
+                    </div>
+                  ) : null}
                 </div>
-                <button
-                  className="btn btn--blue"
-                  type="button"
-                  onClick={loadBlogAutomationStatus}
-                  disabled={blogAutomationLoading}
-                >
-                  {blogAutomationLoading ? "Self-testing..." : "Run self-test"}
-                </button>
+                <div className="action-row">
+                  <button
+                    className="btn btn--ghost"
+                    type="button"
+                    onClick={() => loadBlogAutomationStatus("refresh")}
+                    disabled={!!blogAutomationAction}
+                  >
+                    {blogAutomationAction === "refresh" ? "Refreshing..." : "Refresh"}
+                  </button>
+                  <button
+                    className="btn btn--blue"
+                    type="button"
+                    onClick={() => loadBlogAutomationStatus("self-test")}
+                    disabled={!!blogAutomationAction}
+                  >
+                    {blogAutomationAction === "self-test" ? "Self-testing..." : "Run self-test"}
+                  </button>
+                </div>
               </div>
 
               {blogAutomationStatus ? (
