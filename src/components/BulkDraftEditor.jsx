@@ -49,9 +49,9 @@ export default function BulkDraftEditor({
           </div>
           <div className="bulk-draft-meta">
             <span>
-              CTA: {activeDraftBody.cta || "—"}
+              Button: {ctaLabel || "None"}
             </span>
-            <span>Media: {activeDraftBody.mediaUrl || "None"}</span>
+            <span>Photo: {activeDraftBody.mediaUrl ? "Selected" : "None"}</span>
             <span>
               Topic:{" "}
               {activeDraftBody.serviceTopicLabel ||
@@ -102,14 +102,14 @@ export default function BulkDraftEditor({
           footerText="Live preview of the selected draft."
         />
         <div className="bulk-draft-editor">
-          <label className="field-label">Post copy</label>
+          <label className="field-label">Post text</label>
           <textarea
             value={activeDraftBody.postText || ""}
             onChange={(e) => onBodyChange({ postText: e.target.value })}
             placeholder="Edit the generated text before scheduling."
           />
 
-          <label className="field-label">CTA</label>
+          <label className="field-label">Customer button</label>
           <select
             value={activeDraftBody.cta || "CALL_NOW"}
             onChange={(e) => onBodyChange({ cta: e.target.value })}
@@ -156,7 +156,7 @@ export default function BulkDraftEditor({
             ))}
           </select>
 
-          <label className="field-label">Media URL</label>
+          <label className="field-label">Photo link</label>
           <input
             value={activeDraftBody.mediaUrl || ""}
             onChange={(e) => onBodyChange({ mediaUrl: e.target.value })}
@@ -222,7 +222,7 @@ export default function BulkDraftEditor({
             </div>
           ) : null}
 
-          <label className="field-label">Runs at</label>
+          <label className="field-label">Publish date & time</label>
           <input
             type="datetime-local"
             value={runAtValue}

@@ -59,7 +59,7 @@ export default function ProfilesLinksPanel({
     null;
   const setupItems = [
     {
-      label: "CTA",
+      label: "Customer button",
       ready: linkReady,
       detail:
         cta === "CALL_NOW"
@@ -77,7 +77,8 @@ export default function ProfilesLinksPanel({
       detail: mediaUrl ? "Default set" : "No default",
     },
     {
-      label: "Overlay",
+      label: "Branding",
+      optional: true,
       ready: Boolean(overlayUrl),
       detail: overlayUrl ? "Enabled" : "Optional",
     },
@@ -87,7 +88,7 @@ export default function ProfilesLinksPanel({
     <section className="panel">
       <div className="profiles-panel-header">
         <div>
-          <div className="panel-title">Profiles & media setup</div>
+          <div className="panel-title">Saved settings for this business</div>
           <p className="muted small">
             Set the defaults this profile uses when generating, scheduling, and posting.
           </p>
@@ -111,7 +112,7 @@ export default function ProfilesLinksPanel({
             key={item.label}
           >
             <span>{item.label}</span>
-            <strong>{item.ready ? "Ready" : "Needs setup"}</strong>
+            <strong>{item.ready ? "Ready" : item.optional ? "Optional" : "Not set"}</strong>
             <small>{item.detail}</small>
           </div>
         ))}
@@ -128,7 +129,7 @@ export default function ProfilesLinksPanel({
           ))}
         </select>
         <p className="muted small">
-          Call now will use the phone below; other CTAs use the link field.
+          Call now will use the phone below; other buttons open the destination link.
         </p>
       </div>
       <div className="panel-section">
@@ -176,7 +177,7 @@ export default function ProfilesLinksPanel({
         <p className="muted small">
           {cta === "CALL_NOW"
             ? "Link disabled for Call now; phone above will be used."
-            : "Provide a valid https link for this CTA."}
+            : "Provide a valid https link for this button."}
         </p>
         <div className="link-options">
           <div className="link-options__header">
@@ -302,7 +303,7 @@ export default function ProfilesLinksPanel({
           ) : null}
         </div>
         <p className="muted small">
-          EXIF geo settings now live in Photo scheduler → Photo metadata.
+          Photo location details are in Photo planner → Photo metadata.
           Regular posts don’t need geo tagging.
         </p>
       </div>
@@ -361,7 +362,7 @@ export default function ProfilesLinksPanel({
                       serviceType: e.target.value,
                     })
                   }
-                  placeholder="Drywall repair in Calgary"
+                  placeholder="Drywall repair in your service area"
                 />
                 <label className="field-label">Landing page URL</label>
                 <input
@@ -456,7 +457,7 @@ export default function ProfilesLinksPanel({
                         .filter((tag) => tag && tag !== "#"),
                     })
                   }
-                  placeholder="#DrywallRepair #YYCContractor"
+                  placeholder="#DrywallRepair #HomeImprovement"
                 />
                 <div className="action-row" style={{ marginTop: 4 }}>
                   <button

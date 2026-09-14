@@ -35,7 +35,7 @@ export default function BackendBadge() {
     };
   }, []);
 
-  const txt = ok === null ? "Checking…" : ok ? "Backend OK" : "Backend DOWN";
+  const txt = ok === null ? "Checking…" : ok ? "App online" : "App unavailable";
   return (
     <div style={{ display: "grid", gap: 4 }}>
       <span className="badge" title={base}>
@@ -47,7 +47,7 @@ export default function BackendBadge() {
       </span>
       {authExpired ? (
         <div className="muted small" style={{ lineHeight: 1.3 }}>
-          Token expired. Re-authorize:
+          Google connection needs attention.
           <div>
             <a
               className="btn btn--ghost btn--small"
@@ -55,7 +55,7 @@ export default function BackendBadge() {
               target="_blank"
               rel="noreferrer"
             >
-              Re-authorize
+              Reconnect Google
             </a>
           </div>
         </div>
@@ -68,7 +68,7 @@ export default function BackendBadge() {
             rel="noreferrer"
             style={{ textDecoration: "underline" }}
           >
-            Re-authorize
+            Reconnect Google
           </a>
         )
       )}

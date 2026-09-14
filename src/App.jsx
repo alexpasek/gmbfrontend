@@ -25,8 +25,8 @@ const SERVICE_TOPIC_PRESETS = [
     label: "Popcorn ceiling removal",
     serviceType: "Popcorn ceiling removal",
     summary:
-      "We scrape, resurface, and repaint popcorn ceilings so Calgary homes feel brighter, cleaner, and ready for resale.",
-    hashtags: ["#PopcornRemoval", "#CeilingRefresh", "#CalgaryRenovations"],
+      "Popcorn ceiling removal, resurfacing, and painting for a smoother ceiling finish.",
+    hashtags: ["#PopcornRemoval", "#CeilingRefresh", "#HomeRenovation"],
   },
   {
     key: "drywall-install",
@@ -34,7 +34,7 @@ const SERVICE_TOPIC_PRESETS = [
     serviceType: "Drywall installation",
     summary:
       "Precision drywall installation for basements, additions, and tenant improvements with clean lines and fast finishing.",
-    hashtags: ["#DrywallInstallation", "#FramingToFinish", "#YYCContractor"],
+    hashtags: ["#DrywallInstallation", "#FramingToFinish", "#DrywallContractor"],
   },
   {
     key: "drywall-repair",
@@ -42,7 +42,7 @@ const SERVICE_TOPIC_PRESETS = [
     serviceType: "Drywall repair",
     summary:
       "Patch holes, re-tape seams, and retexture walls so the repair disappears and paint lays down perfectly.",
-    hashtags: ["#DrywallRepair", "#WallRescue", "#CalgaryHomes"],
+    hashtags: ["#DrywallRepair", "#WallRescue", "#HomeRepairs"],
   },
   {
     key: "baseboard-install",
@@ -58,7 +58,7 @@ const SERVICE_TOPIC_PRESETS = [
     serviceType: "Wallpaper removal",
     summary:
       "Steaming, stripping, and skim-coating wallpapered rooms so new paint or paper goes on a smooth surface.",
-    hashtags: ["#WallpaperRemoval", "#PrepAndPaint", "#CalgaryRenovation"],
+    hashtags: ["#WallpaperRemoval", "#PrepAndPaint", "#InteriorRenovation"],
   },
 ];
 
@@ -937,18 +937,19 @@ const CTA_LABELS = CTA_OPTIONS.reduce((acc, item) => {
 }, {});
 
 const TABS = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "profiles", label: "Profiles & media" },
-  { id: "bulk", label: "Bulk access" },
-  { id: "photo-scheduler", label: "Photo scheduler" },
-  { id: "youtube-poster", label: "YouTube poster" },
-  { id: "blog-automation", label: "Blog automation" },
-  { id: "scheduler", label: "Scheduler" },
-  { id: "performance", label: "Performance" },
-  { id: "history", label: "Post history" },
-  { id: "api-coverage", label: "GBP API" },
-  { id: "diagnostics", label: "Diagnostics" },
+  { id: "dashboard", label: "Overview", group: "Workspace", description: "Choose what you want to do and see your posting status." },
+  { id: "profiles", label: "Create a post", group: "Workspace", description: "Write your update, choose a photo, then publish or schedule it." },
+  { id: "history", label: "Posts & drafts", group: "Workspace", description: "Review published posts, edit scheduled updates, and prepare batches." },
+  { id: "photo-scheduler", label: "Photo planner", group: "Workspace", description: "Add photos to your Google profile’s photo library, now or later." },
+  { id: "performance", label: "Results", group: "Workspace", description: "See how people find and interact with the selected business." },
+  { id: "scheduler", label: "Automatic posting", group: "Automation", description: "Set posting times and manage recurring updates." },
+  { id: "bulk", label: "Included profiles", group: "Automation", description: "Choose which businesses participate in bulk and automatic posting." },
+  { id: "youtube-poster", label: "YouTube", group: "Channels", description: "Prepare videos and optionally share them on your Google business profile." },
+  { id: "blog-automation", label: "Blog to Google", group: "Channels", description: "Check updates created from your website’s blog articles." },
+  { id: "api-coverage", label: "Integration details", group: "Tools", description: "Review the Google features supported by this app." },
+  { id: "diagnostics", label: "Connection checks", group: "Tools", description: "Troubleshoot Google accounts, business locations, and photo access." },
 ];
+const NAV_GROUPS = [...new Set(TABS.map(tab => tab.group))];
 
 const TAB_IDS = new Set(TABS.map((t) => t.id));
 
@@ -1057,30 +1058,10 @@ const GBP_API_CAPABILITIES = [
 ];
 
 const DASHBOARD_WORKFLOWS = [
-  {
-    title: "Create one post",
-    detail: "Choose a profile, generate a post, attach media, preview it, then post or queue it.",
-    action: "Open composer",
-    tab: "profiles",
-  },
-  {
-    title: "Schedule photos",
-    detail: "Select gallery photos, apply geo metadata, and queue photo-only uploads.",
-    action: "Open photo scheduler",
-    tab: "photo-scheduler",
-  },
-  {
-    title: "Control automation",
-    detail: "Set cadence, run the scheduler once, and pause profiles that should not post.",
-    action: "Open scheduler",
-    tab: "scheduler",
-  },
-  {
-    title: "Check API coverage",
-    detail: "See which current GBP APIs are live, ready to add, or intentionally out of scope.",
-    action: "Open GBP API",
-    tab: "api-coverage",
-  },
+  { title: "Share an update", detail: "Write a post, add a photo, and choose when it goes live.", action: "Create a post →", tab: "profiles" },
+  { title: "Plan ahead", detail: "Review scheduled posts or prepare several drafts together.", action: "Open posts & drafts →", tab: "history" },
+  { title: "Keep photos fresh", detail: "Upload images to your business photo library. These are separate from posts.", action: "Open photo planner →", tab: "photo-scheduler" },
+  { title: "See your results", detail: "Check profile views, customer actions, and search keywords.", action: "View results →", tab: "performance" },
 ];
 
 const STORAGE_KEYS = {
@@ -1441,7 +1422,7 @@ function buildPerformanceSuggestions({
     suggestions.push({
       title: "Low conversion from profile views",
       detail:
-        "Calls, website clicks, directions, and messages are low compared with visibility. Tighten service copy, add stronger photos, and make the primary CTA match the service intent.",
+        "Calls, website clicks, directions, and messages are low compared with visibility. Tighten service copy, add stronger photos, and make the customer button match the service intent.",
       priority: "High",
     });
   }
@@ -1850,7 +1831,7 @@ export default function App() {
     : null;
   const previewFooterText = previewDetails?.generatedAt
     ? `Generated ${new Date(previewDetails.generatedAt).toLocaleString()}`
-    : "Live preview reflects the text and CTA above.";
+    : "Live preview reflects the text and customer button.";
   const previewWarning =
     previewDetails?.profileId &&
     selectedId &&
@@ -2932,7 +2913,7 @@ export default function App() {
       }
     } else {
       if (!isValidHttpLink(effectiveLink)) {
-        notify("For this CTA, please provide a valid https:// link.");
+        notify("For this button, please provide a valid https:// link.");
         return false;
       }
     }
@@ -3686,7 +3667,7 @@ export default function App() {
             },
           ]
         : [];
-    if (!images.length)
+    if (!queuedImages.length)
       return notify("Select at least one image (gallery or photo URL).");
     const durationDays =
       bulkDurationPreset === "all"
@@ -3696,9 +3677,9 @@ export default function App() {
         : Number(bulkDurationPreset);
     const slotsLimit =
       bulkDurationPreset === "all"
-        ? images.length
+        ? queuedImages.length
         : Math.min(
-            images.length,
+            queuedImages.length,
             Math.max(1, Math.ceil(durationDays / autoCadenceDays || 1))
           );
     const useImages = queuedImages.slice(0, slotsLimit);
@@ -4285,6 +4266,7 @@ export default function App() {
 
   return (
     <div className="shell">
+      <a className="skip-link" href="#workspace-content">Skip to content</a>
       <aside className={`sidebar${isSidebarOpen ? " sidebar--open" : ""}`}>
         <button
           type="button"
@@ -4299,21 +4281,22 @@ export default function App() {
           <div className="logo-mark">GV</div>
           <div>
             <div className="logo-title">GMB Viking</div>
-            <div className="logo-subtitle">GBP autoposter</div>
+            <div className="logo-subtitle">Google Business workspace</div>
           </div>
         </div>
-        <nav className="nav">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={"nav-item" + (tab === t.id ? " nav-item--active" : "")}
-              onClick={() => {
-                setTab(t.id);
-                closeSidebar();
-              }}
-            >
-              {t.label}
-            </button>
+        <nav className="nav" aria-label="Main navigation">
+          {NAV_GROUPS.map(group => (
+            <div className="nav-group" key={group}>
+              <div className="nav-group-label">{group}</div>
+              {TABS.filter(t => t.group === group).map(t => (
+                <button key={t.id} type="button"
+                  className={"nav-item" + (tab === t.id ? " nav-item--active" : "")}
+                  aria-current={tab === t.id ? "page" : undefined}
+                  onClick={() => { setTab(t.id); closeSidebar(); }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-footer">
@@ -4337,28 +4320,7 @@ export default function App() {
               {TABS.find((t) => t.id === tab)?.label || "Dashboard"}
             </h1>
             <p className="main-subtitle">
-              {tab === "dashboard" &&
-                "High-level overview of your GBP automation."}
-              {tab === "profiles" &&
-                "Profiles, CTAs, media defaults, and quick composer."}
-              {tab === "bulk" &&
-                "Toggle bulk inclusion and manage posting access."}
-              {tab === "photo-scheduler" &&
-                "Schedule photo-only uploads with geo-tag metadata."}
-              {tab === "youtube-poster" &&
-                "Upload YouTube videos with local SEO and optional GBP cross-posting."}
-              {tab === "blog-automation" &&
-                "Monitor blog webhooks, agent self-tests, local SEO post generation, and automated GBP publishing."}
-              {tab === "scheduler" &&
-                "Configure daily times and monitor the scheduler."}
-              {tab === "performance" &&
-                "GBP daily metrics for the selected profile."}
-              {tab === "history" &&
-                "Review what was sent and how it performed."}
-              {tab === "api-coverage" &&
-                "Current Google Business Profile API coverage and next integration targets."}
-              {tab === "diagnostics" &&
-                "Debug accounts, locations, and media reachability."}
+              {TABS.find(t => t.id === tab)?.description}
             </p>
           </div>
 
@@ -4374,11 +4336,13 @@ export default function App() {
               <span />
             </button>
             <div className="profile-switcher">
-              <label className="field-label">Active profile</label>
+              <label className="field-label" htmlFor="active-profile">Selected business</label>
               <select
+                id="active-profile"
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
               >
+                {!profiles.length && <option value="">No businesses loaded</option>}
                 {profiles.map((p) => (
                   <option key={p.profileId} value={p.profileId}>
                     {(p.businessName || p.profileId) +
@@ -4391,19 +4355,18 @@ export default function App() {
           </div>
         </header>
 
-        <main className="main-body">
+        <main className="main-body" id="workspace-content" tabIndex={-1}>
           {tab === "dashboard" && (
             <section className="dashboard-stack">
               <div className="dashboard-hero">
                 <div>
-                  <div className="dashboard-eyebrow">Command center</div>
+                  <div className="dashboard-eyebrow">Your workspace</div>
                   <h2>
                     {selectedProfile?.businessName ||
                       "Select a profile to start posting"}
                   </h2>
                   <p>
-                    Move through the app by task: compose posts, schedule
-                    photo uploads, control automation, then verify API health.
+                    Choose a task below. Your selected business stays with you as you move between screens.
                   </p>
                 </div>
                 <div className="dashboard-hero__actions">
@@ -4413,7 +4376,7 @@ export default function App() {
                     onClick={() => setTab("profiles")}
                     disabled={!selectedId}
                   >
-                    Compose
+                    Create a post
                   </button>
                   <button
                     className="btn btn--green"
@@ -4427,7 +4390,7 @@ export default function App() {
                     type="button"
                     onClick={() => setTab("diagnostics")}
                   >
-                    Run checks
+                    Connection checks
                   </button>
                 </div>
               </div>
@@ -4445,19 +4408,19 @@ export default function App() {
                 </div>
                 <div className="metric-card">
                   <span>Scheduler</span>
-                  <strong>{schedStatus?.enabled ? "On" : "Off"}</strong>
+                  <strong>{schedStatus ? (schedStatus.enabled ? "On" : "Off") : "Unknown"}</strong>
                   <small>{schedStatus?.defaultTime || "10:00"} default</small>
                 </div>
                 <div className="metric-card">
                   <span>Queued posts</span>
                   <strong>{scheduledPosts.length}</strong>
-                  <small>Future post queue</small>
+                  <small>For the selected business</small>
                 </div>
               </div>
 
               <div className="panel-grid panel-grid--two">
                 <div className="panel panel--full">
-                  <div className="panel-title">Workflow shortcuts</div>
+                  <div className="panel-title">What would you like to do?</div>
                   <div className="workflow-grid">
                     {DASHBOARD_WORKFLOWS.map((item) => (
                       <button
@@ -4475,7 +4438,7 @@ export default function App() {
                 </div>
 
                 <div className="panel">
-                  <div className="panel-title">Scheduler snapshot</div>
+                  <div className="panel-title">Automatic posting</div>
                   {schedStatus ? (
                     <div className="stats-grid">
                       <div>
@@ -4487,7 +4450,7 @@ export default function App() {
                         <strong>{schedStatus.defaultTime || "—"}</strong>
                       </div>
                       <div>
-                        <div className="muted small">Tick</div>
+                        <div className="muted small">Check interval</div>
                         <strong>{(schedStatus.tickSeconds || 30) + "s"}</strong>
                       </div>
                     </div>
@@ -4501,7 +4464,7 @@ export default function App() {
                       onClick={runAllNow}
                       disabled={busy}
                     >
-                      Run once
+                      Run automatic posting now
                     </button>
                     <button
                       className="btn btn--ghost"
@@ -4523,24 +4486,24 @@ export default function App() {
                           {selectedProfile.city || "No city"} ·{" "}
                           {selectedProfile.disabled ? "Paused" : "Active"}
                         </span>
-                        <small className="muted">{selectedProfile.profileId}</small>
+                        <small className="muted">Posts and results use this business. Change it in the selector above.</small>
                       </div>
                       <div className="action-row">
                         <button
                           className="btn btn--blue"
                           type="button"
-                          onClick={doPreview}
-                          disabled={!selectedId || previewing}
+                          onClick={() => setTab("profiles")}
+                          disabled={!selectedId}
                         >
-                          {previewing ? "Generating..." : "Generate preview"}
+                          Open post editor
                         </button>
                         <button
                           className="btn btn--green"
                           type="button"
-                          onClick={doPostNow}
-                          disabled={!selectedId || busy || posting}
+                          onClick={() => setTab("history")}
+                          disabled={!selectedId}
                         >
-                          {posting ? "Posting..." : "Post now"}
+                          View posts & drafts
                         </button>
                       </div>
                     </>
@@ -4585,17 +4548,27 @@ export default function App() {
                     onClick={() => loadBlogAutomationStatus("self-test")}
                     disabled={!!blogAutomationAction}
                   >
-                    {blogAutomationAction === "self-test" ? "Self-testing..." : "Run self-test"}
+                    {blogAutomationAction === "self-test" ? "Checking..." : "Check status"}
                   </button>
                 </div>
               </div>
 
               {blogAutomationStatus ? (
                 <>
+                  <div className="glass-card">
+                    <h3>Automatic blog posting</h3>
+                    <p>{blogAutomationStatus.monitor?.enabled ? "Checks your live website every 5 minutes and posts new articles to Google with a photo." : "Automatic website checks are not enabled."}</p>
+                    <p>{blogAutomationStatus.monitor?.error || blogAutomationStatus.monitor?.lastResult || "Waiting for the first website check."}</p>
+                    <p>Last website check: {blogAutomationStatus.monitor?.checkedAt ? new Date(blogAutomationStatus.monitor.checkedAt).toLocaleString() : "Not yet"}</p>
+                    <p>Existing articles skipped: {blogAutomationStatus.monitor?.baselineCount || 0} · Articles waiting: {blogAutomationStatus.monitor?.pendingCount || 0}</p>
+                    {(blogAutomationStatus.deliveryIssues || []).map(issue => (
+                      <p key={issue.url} role="alert">Delivery needs review: {issue.url}. Automatic retries are paused for this article to prevent duplicates.</p>
+                    ))}
+                  </div>
                   <div className="automation-flow">
                     {[
                       "Website / Blog",
-                      "Webhook received",
+                      "New article detected",
                       "Validate + dedupe",
                       "Route profile",
                       "Generate local SEO post",
@@ -4678,7 +4651,7 @@ export default function App() {
                               <dd>{blogAutomationStatus.lastEvent.webhookBlogUrl || blogAutomationStatus.lastEvent.url || "—"}</dd>
                             </div>
                             <div>
-                              <dt>Generated CTA city page</dt>
+                              <dt>Customer button destination</dt>
                               <dd>{blogAutomationStatus.lastEvent.ctaUrl || "—"}</dd>
                             </div>
                             <div>
@@ -4795,15 +4768,12 @@ export default function App() {
                 <div>
                   <div className="panel-title">Google Business Profile API coverage</div>
                   <p className="muted small">
-                    Checked against the official GBP API reference and change
-                    log. Recent additions to prioritize are recurring Local
-                    Posts, review media items, review reply state, and expanded
-                    Food Menu dish photos.
+                    Supported features and possible future additions. This page is a reference; connection checks show whether your account can currently use the integration.
                   </p>
                 </div>
                 <div className="api-summary__meta">
-                  <span>Docs checked: 2026-05-04</span>
-                  <span>Google docs last updated: 2025-08-28</span>
+                  <span>Integration review: September 14, 2026</span>
+                  <span>Optional features do not require setup</span>
                 </div>
               </div>
 
@@ -4840,9 +4810,9 @@ export default function App() {
 
           {tab === "bulk" && (
             <section className="panel">
-              <div className="panel-title">Bulk posting access</div>
+              <div className="panel-title">Profiles included in automation</div>
               <p className="muted small">
-                Toggle inclusion for “Post all” and scheduler runs.
+                Turn a business on to include it in bulk and automatic posting. Changes save immediately.
               </p>
               <div className="bulk-grid">
                 {profiles.length === 0 ? (
@@ -4886,6 +4856,102 @@ export default function App() {
 
           {tab === "profiles" && (
             <>
+              <div className="composer-context">
+                <div><span className="eyebrow">Posting to</span><strong>{selectedProfile?.businessName || "Choose a business above"}</strong></div>
+                <span className="context-city">{selectedProfile?.city || "City not set"}</span>
+              </div>
+              <div className="composer-layout">
+              <SchedulePanel
+                hasProfile={!!selectedProfile}
+                profileName={selectedProfile?.businessName || ""}
+                panelRef={generateRef}
+                onPreview={doPreview}
+                previewing={previewing}
+                onPostNow={doPostNow}
+                posting={posting}
+                postNowStatus={postNowStatus}
+                busy={busy}
+                onPostAll={doPostNowAll}
+                onClear={clearPostComposer}
+                scheduleDate={scheduleDate}
+                onChangeScheduleDate={setScheduleDate}
+                scheduleTime={scheduleTime}
+                onChangeScheduleTime={setScheduleTime}
+                onSchedule={schedulePost}
+                scheduleStatus={scheduleStatus}
+                autoCadenceDays={autoCadenceDays}
+                onChangeAutoCadence={setAutoCadenceDays}
+                onAutoScheduleWithAi={autoScheduleWithAi}
+                bulkBusy={bulkBusy}
+                postType={postType}
+                onChangePostType={setPostType}
+                postTypes={POST_TYPES}
+                eventTitle={eventTitle}
+                onChangeEventTitle={setEventTitle}
+                eventStart={eventStart}
+                onChangeEventStart={setEventStart}
+                eventEnd={eventEnd}
+                onChangeEventEnd={setEventEnd}
+                offerTitle={offerTitle}
+                onChangeOfferTitle={setOfferTitle}
+                offerCoupon={offerCoupon}
+                onChangeOfferCoupon={setOfferCoupon}
+                offerRedeemUrl={offerRedeemUrl}
+                onChangeOfferRedeemUrl={setOfferRedeemUrl}
+                postText={postText}
+                onChangePostText={setPostText}
+                preview={preview}
+                serviceTopics={serviceTopics}
+                serviceTopicId={composerServiceTopicId}
+                defaultServiceTopicId={defaultServiceTopicId}
+                onChangeServiceTopicId={setComposerServiceTopicId}
+              />
+
+              <div className="composer-review">
+                <section className="panel">
+                  <div className="panel-title">2. Choose a photo & button</div>
+                  <p className="muted small">Use a real project photo or select an image from your library.</p>
+                  <div className="action-row">
+                    <button type="button" className="btn btn--blue" disabled={!selectedId} onClick={() => openMediaGallery("profile")}>Choose a photo</button>
+                    <label className="btn btn--ghost upload-btn">{uploadingPhoto ? "Uploading…" : "Upload photo"}<input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploadingPhoto || !selectedId} /></label>
+                  </div>
+                  <label className="field-label" htmlFor="composer-photo-url">Photo link</label>
+                  <input id="composer-photo-url" value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="https://… or choose a photo above" />
+                  <label className="field-label" htmlFor="composer-button">What should customers do?</label>
+                  <select id="composer-button" value={cta} onChange={e => setCta(e.target.value)}>{CTA_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                  {cta === "CALL_NOW" ? <p className="muted small">Calls use {phoneCandidate || "the phone number in your business settings below"}.</p> : <><label className="field-label" htmlFor="composer-link">Button destination</label><input id="composer-link" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://your-website.com/service/" /></>}
+                </section>
+              <section className="panel">
+                <div className="panel-title">3. Review your post</div>
+                <div className="panel-section preview-shell">
+                  {postText || preview ? (
+                    <PostPreview
+                      profileName={previewProfileName}
+                      profileCity={previewProfileCity}
+                      focusArea={previewFocusArea}
+                      badgeLabel={getPostTypeLabel(postType)}
+                      warning={previewWarning}
+                      bodyText={previewBodyText}
+                      ctaLabel={CTA_LABELS[cta] || "Customer button"}
+                      ctaHref={previewCtaHref}
+                      ctaDisabled={!previewCtaHref}
+                      metaRows={previewMetaRows}
+                      mediaUrl={previewMediaPreviewUrl}
+                      overlayUrl={previewOverlayPreviewUrl}
+                      onMediaClick={handlePreviewMediaClick}
+                      footerText={previewFooterText}
+                    />
+                  ) : (
+                    <div className="muted small">
+                      Write your post or use “Draft with AI” to see it here. Review the business, photo, and button before publishing.
+                    </div>
+                  )}
+                </div>
+              </section>              </div>
+              </div>
+              <details className="workspace-disclosure">
+                <summary>Business settings <span>Saved links, services, default photos, and branding</span></summary>
+                <div className="disclosure-content">
               <ProfilesLinksPanel
                 cta={cta}
                 setCta={setCta}
@@ -4936,11 +5002,17 @@ export default function App() {
                 onMediaTopicChange={handleMediaTopicChange}
                 photoPool={selectedProfile?.photoPool || []}
               />
+                </div>
+              </details>
+              <details className="workspace-disclosure">
+                <summary>AI image studio <span>Create promotional images for posts and schedules</span></summary>
+                <div className="disclosure-content">
+
 
               <section className="panel">
                 <div className="profiles-panel-header">
                   <div>
-                    <div className="panel-title">Thematic photo generator</div>
+                    <div className="panel-title">Create a collection of AI images</div>
                     <p className="muted small">
                       Generate SEO-themed images for this profile, then use them
                       as defaults, scheduler photos, or bulk post media.
@@ -5036,7 +5108,7 @@ export default function App() {
               <section className="panel">
                 <div className="profiles-panel-header">
                   <div>
-                    <div className="panel-title">AI media for post scheduler</div>
+                    <div className="panel-title">Create an AI image for this post</div>
                     <p className="muted small">
                       Generate a thematic photo for the current post, then
                       schedule or publish it with the post copy.
@@ -5135,77 +5207,10 @@ export default function App() {
                 ) : null}
               </section>
 
-              <SchedulePanel
-                panelRef={generateRef}
-                onPreview={doPreview}
-                previewing={previewing}
-                onPostNow={doPostNow}
-                posting={posting}
-                postNowStatus={postNowStatus}
-                busy={busy}
-                onPostAll={doPostNowAll}
-                onClear={clearPostComposer}
-                scheduleDate={scheduleDate}
-                onChangeScheduleDate={setScheduleDate}
-                scheduleTime={scheduleTime}
-                onChangeScheduleTime={setScheduleTime}
-                onSchedule={schedulePost}
-                scheduleStatus={scheduleStatus}
-                autoCadenceDays={autoCadenceDays}
-                onChangeAutoCadence={setAutoCadenceDays}
-                onAutoScheduleWithAi={autoScheduleWithAi}
-                bulkBusy={bulkBusy}
-                postType={postType}
-                onChangePostType={setPostType}
-                postTypes={POST_TYPES}
-                eventTitle={eventTitle}
-                onChangeEventTitle={setEventTitle}
-                eventStart={eventStart}
-                onChangeEventStart={setEventStart}
-                eventEnd={eventEnd}
-                onChangeEventEnd={setEventEnd}
-                offerTitle={offerTitle}
-                onChangeOfferTitle={setOfferTitle}
-                offerCoupon={offerCoupon}
-                onChangeOfferCoupon={setOfferCoupon}
-                offerRedeemUrl={offerRedeemUrl}
-                onChangeOfferRedeemUrl={setOfferRedeemUrl}
-                postText={postText}
-                onChangePostText={setPostText}
-                preview={preview}
-                serviceTopics={serviceTopics}
-                serviceTopicId={composerServiceTopicId}
-                defaultServiceTopicId={defaultServiceTopicId}
-                onChangeServiceTopicId={setComposerServiceTopicId}
-              />
 
-              <section className="panel">
-                <div className="panel-title">Last generated preview</div>
-                <div className="panel-section preview-shell">
-                  {postText || preview ? (
-                    <PostPreview
-                      profileName={previewProfileName}
-                      profileCity={previewProfileCity}
-                      focusArea={previewFocusArea}
-                      badgeLabel={getPostTypeLabel(postType)}
-                      warning={previewWarning}
-                      bodyText={previewBodyText}
-                      ctaLabel={CTA_LABELS[cta] || "CTA button"}
-                      ctaHref={previewCtaHref}
-                      ctaDisabled={!previewCtaHref}
-                      metaRows={previewMetaRows}
-                      mediaUrl={previewMediaPreviewUrl}
-                      overlayUrl={previewOverlayPreviewUrl}
-                      onMediaClick={handlePreviewMediaClick}
-                      footerText={previewFooterText}
-                    />
-                  ) : (
-                    <div className="muted small">
-                      No preview yet. Click "Generate preview" to see AI output.
-                    </div>
-                  )}
                 </div>
-              </section>
+              </details>
+
             </>
           )}
 
@@ -5227,7 +5232,7 @@ export default function App() {
                     </strong>
                   </div>
                   <div>
-                    <div className="muted small">Tick</div>
+                    <div className="muted small">Check interval</div>
                     <strong>
                       {(schedStatus && schedStatus.tickSeconds) || 30}s
                     </strong>
@@ -5243,14 +5248,14 @@ export default function App() {
                     onClick={runAllNow}
                     disabled={busy}
                   >
-                    Run all now
+                    Run for eligible profiles
                   </button>
                   <button
                     className="btn btn--indigo"
                     onClick={runOneNow}
                     disabled={!selectedId || busy}
                   >
-                    Run selected
+                    Run for selected business
                   </button>
                 </div>
 
@@ -5281,7 +5286,7 @@ export default function App() {
               </div>
 
               <div className="panel">
-                <div className="panel-title">Scheduler config</div>
+                <div className="panel-title">Posting settings</div>
                 <form onSubmit={saveConfig} className="config-form">
                   <label className="checkbox-inline">
                     <input
@@ -5305,7 +5310,7 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="field-label">Tick seconds</label>
+                      <label className="field-label">Check interval (seconds)</label>
                       <input
                         name="tickSeconds"
                         defaultValue={
@@ -5340,7 +5345,7 @@ export default function App() {
                       disabled={busy}
                       type="submit"
                     >
-                      Save config
+                      Save posting settings
                     </button>
                     <button
                       type="button"
@@ -5364,7 +5369,7 @@ export default function App() {
                     <div>
                       <div className="field-label">AI photo generator</div>
                       <div className="muted small">
-                        Create local SEO-themed project photos and send them
+                        Create AI promotional images and send them
                         straight into this scheduler.
                       </div>
                     </div>
@@ -5665,7 +5670,7 @@ export default function App() {
                       <input
                         value={photoCity}
                         onChange={(e) => setPhotoCity(e.target.value)}
-                        placeholder={selectedProfile?.city || "Calgary"}
+                        placeholder={selectedProfile?.city || "Business city"}
                       />
                     </div>
                     <div className="section">
@@ -6964,7 +6969,7 @@ export default function App() {
                         <tr>
                           <th>When</th>
                           <th>Profile</th>
-                          <th>CTA</th>
+                          <th>Customer button</th>
                           <th>Status</th>
                           <th>Actions</th>
                         </tr>
@@ -7351,7 +7356,7 @@ export default function App() {
                     profileName={activeDraftProfileName}
                     profileCity={activeDraftCity}
                     topicLabel={activeDraftTopicLabel}
-                    ctaLabel={CTA_LABELS[activeDraftCta] || "CTA button"}
+                    ctaLabel={CTA_LABELS[activeDraftCta] || "Customer button"}
                     ctaOptions={CTA_OPTIONS}
                     linkOptions={linkOptions}
                     activeDraftBody={activeDraftBody}
@@ -7399,7 +7404,7 @@ export default function App() {
           )}
         </main>
 
-        {toast ? <div className="toast">{toast}</div> : null}
+        {toast ? <div className="toast" role="status" aria-live="polite">{toast}</div> : null}
 
         <MediaGalleryModal
           open={mediaGalleryOpen}
