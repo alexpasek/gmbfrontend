@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {createServer} from 'vite';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import assert from 'node:assert/strict';
-const server=await createServer({server:{middlewareMode:true,hmr:false,ws:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom'});
+const cacheDir=mkdtempSync(join(tmpdir(),"gmb-offer-render-"));
+const server=await createServer({cacheDir,server:{middlewareMode:true,hmr:false,ws:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom'});
 try {
  const {default:Panel}=await server.ssrLoadModule('/src/components/SchedulePanel.jsx');
  const {default:Preview}=await server.ssrLoadModule('/src/components/PostPreview.jsx');
@@ -13,4 +17,4 @@ try {
  const preview=renderToStaticMarkup(React.createElement(Preview,{offerDetails:{title:props.offerTitle,start:props.offerStart,end:props.offerEnd,terms:props.offerTerms,coupon:'TOGETHER30'},ctaLabel:'View offer'}));
  for(const text of ['30% off painting labour','2026-11-30','Materials excluded.','TOGETHER30','View offer'])assert.ok(preview.includes(text),text);
  console.log('Offer form and customer preview render all required fields.');
-} finally {await server.close();}
+} finally {await server.close();rmSync(cacheDir,{recursive:true,force:true});}
