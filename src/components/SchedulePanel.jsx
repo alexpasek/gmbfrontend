@@ -31,6 +31,10 @@ export default function SchedulePanel({
   onChangeEventStart,
   eventEnd,
   onChangeEventEnd,
+  offerStart, onChangeOfferStart,
+  offerEnd, onChangeOfferEnd,
+  offerTerms, onChangeOfferTerms,
+  offerStarters = [], onOfferStarter,
   offerTitle,
   onChangeOfferTitle,
   offerCoupon,
@@ -111,18 +115,31 @@ export default function SchedulePanel({
       )}
       {postType === "OFFER" && (
         <div className="panel-section">
+          <h3>Offer details</h3>
+          <p className="muted small">Add the actual promotion, its validity dates and any exclusions. Publishing later is separate from the offer dates.</p>
+          <div className="action-row">{offerStarters.map(starter => <button key={starter.title} type="button" className="btn btn--ghost" disabled={busy} onClick={() => onOfferStarter(starter)}>{starter.title}</button>)}</div>
+          <p className="muted small">Starters contain no promised discount. Edit them to match your promotion.</p>
           <div className="section-grid">
             <div className="section">
               <label className="field-label">Offer title</label>
               <input
+                aria-label="Offer title"
+                maxLength={58}
                 value={offerTitle}
                 onChange={(e) => onChangeOfferTitle(e.target.value)}
                 placeholder="10% off popcorn ceiling removal"
               />
             </div>
             <div className="section">
-              <label className="field-label">Coupon code</label>
+              <label className="field-label" htmlFor="offer-start">Offer starts</label>
+              <input id="offer-start" type="date" value={offerStart} onChange={e => onChangeOfferStart(e.target.value)} />
+              <label className="field-label" htmlFor="offer-end">Offer ends</label>
+              <input id="offer-end" type="date" min={offerStart || undefined} value={offerEnd} onChange={e => onChangeOfferEnd(e.target.value)} />
+            </div>
+            <div className="section">
+              <label className="field-label">Coupon code (optional)</label>
               <input
+                aria-label="Coupon code"
                 value={offerCoupon}
                 onChange={(e) => onChangeOfferCoupon(e.target.value)}
                 placeholder="SPRING10"
@@ -131,6 +148,8 @@ export default function SchedulePanel({
             <div className="section">
               <label className="field-label">Redeem URL (optional)</label>
               <input
+                aria-label="Offer redemption link"
+                type="url"
                 value={offerRedeemUrl}
                 onChange={(e) => onChangeOfferRedeemUrl(e.target.value)}
                 placeholder="https://example.com/offer"
@@ -139,9 +158,13 @@ export default function SchedulePanel({
           </div>
         </div>
       )}
+      {postType === "OFFER" && <div className="panel-section">
+        <label className="field-label" htmlFor="offer-terms">Terms and exclusions (optional)</label>
+        <textarea id="offer-terms" rows={4} value={offerTerms} onChange={e => onChangeOfferTerms(e.target.value)} placeholder="Qualifying work, materials, minimum job size and whether discounts can be combined." />
+      </div>}
       <div className="panel-section">
         <div className="action-row">
-        <button className="btn btn--blue" onClick={onPreview} disabled={!hasProfile || busy || previewing}>
+        <button className="btn btn--blue" onClick={onPreview} disabled={!hasProfile || busy || previewing || postType === "OFFER"}>
           {previewing ? (
             <span className="loading-dots" role="status" aria-label="Working">
               <span />
@@ -234,7 +257,7 @@ export default function SchedulePanel({
             className="btn btn--indigo"
             type="button"
             onClick={onAutoScheduleWithAi}
-            disabled={!hasProfile || bulkBusy || busy}
+            disabled={!hasProfile || bulkBusy || busy || postType === "OFFER"}
           >
             Create an AI posting schedule
           </button>

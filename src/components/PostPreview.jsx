@@ -6,6 +6,7 @@ export default function PostPreview({
   focusArea = "",
   badgeLabel = "Standard update",
   warning = null,
+  offerDetails = null,
   bodyText = "—",
   ctaLabel = "CTA button",
   ctaHref = "",
@@ -56,6 +57,12 @@ export default function PostPreview({
         <div className="post-preview__badge">{badgeLabel || "—"}</div>
       </div>
 
+      {offerDetails && <div className="offer-preview">
+        <h3>{offerDetails.title || "Offer title"}</h3>
+        <p>Valid {offerDetails.start || "start date"} – {offerDetails.end || "end date"}</p>
+        {offerDetails.coupon && <p>Coupon: <strong>{offerDetails.coupon}</strong></p>}
+        {offerDetails.terms && <p style={{ whiteSpace: "pre-wrap" }}>Terms: {offerDetails.terms}</p>}
+      </div>}
       <div className="post-preview__copy">{bodyValue}</div>
 
       <div className="post-preview__cta-row">

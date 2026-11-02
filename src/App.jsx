@@ -1,3 +1,4 @@
+import { offerError, OFFER_STARTERS } from "./lib/offers.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api, {
   getApiBase,
@@ -1509,6 +1510,9 @@ export default function App() {
   const [eventStart, setEventStart] = useState("");
   const [eventEnd, setEventEnd] = useState("");
   const [offerTitle, setOfferTitle] = useState("");
+  const [offerStart, setOfferStart] = useState("");
+  const [offerEnd, setOfferEnd] = useState("");
+  const [offerTerms, setOfferTerms] = useState("");
   const [offerCoupon, setOfferCoupon] = useState("");
   const [offerRedeemUrl, setOfferRedeemUrl] = useState("");
 
@@ -1791,7 +1795,7 @@ export default function App() {
   const previewProfileCity = selectedProfile?.city || "";
   const previewFocusArea = previewDetails?.neighbourhood || "";
   const previewBodyText = (postText || preview || "").trim() || "—";
-  const previewCtaHref = resolveCtaLink(cta, linkUrl);
+  const previewCtaHref = postType === "OFFER" ? (/^https?:\/\//i.test(offerRedeemUrl.trim()) ? offerRedeemUrl.trim() : "") : resolveCtaLink(cta, linkUrl);
   const previewLinkContent = linkUrl ? (
     previewCtaHref ? (
       <a
@@ -2453,6 +2457,7 @@ export default function App() {
   }, [reviewLink, serviceAreaLink, areaMapLink, selectedProfile?.profileId]);
 
   async function doPreview() {
+    if (postType === "OFFER") return notify("Choose an offer starter and add your actual promotion details in the post text.");
     if (!selectedId) return notify("Select a profile first");
     setPreview("");
     setPreviewing(true);
@@ -2900,7 +2905,12 @@ export default function App() {
   }
 
   function validateBeforePost(effectiveLink) {
-    if (cta === "CALL_NOW") {
+    if (postType === "OFFER" && !postText.trim()) { notify("Write the offer description first."); return false; }
+    const error = offerError({ topicType: postType, offerTitle, offerStart, offerEnd, offerRedeemUrl });
+    if (error) { notify(error); return false; }
+    if (postType === "OFFER") {
+      // Offers use their own optional redemption link, not the normal CTA.
+    } else if (cta === "CALL_NOW") {
       const phoneOk =
         (phoneCandidate &&
           /(\+?[0-9][0-9\-\s\(\)]{5,})/.test(phoneCandidate)) ||
@@ -2978,6 +2988,7 @@ export default function App() {
         offerTitle,
         offerCoupon,
         offerRedeemUrl,
+        offerStart, offerEnd, offerTerms,
       });
       notify("Posted!");
       setPostNowStatus("posted");
@@ -3021,6 +3032,10 @@ export default function App() {
         : isValidHttpLink(linkUrl)
         ? linkUrl
         : getFallbackLink(selectedProfile);
+    if (when.getTime() <= Date.now()) return notify("Choose a future publish date and time.");
+    if (!validateBeforePost(effectiveLink)) return;
+    const offerIssue = offerError({ topicType: postType, offerTitle, offerStart, offerEnd, offerRedeemUrl }, when);
+    if (offerIssue) return notify(offerIssue);
     const body = {
       profileId: selectedId,
       postText,
@@ -3039,6 +3054,7 @@ export default function App() {
       offerTitle,
       offerCoupon,
       offerRedeemUrl,
+      offerStart, offerEnd, offerTerms,
     };
     try {
       setBusy(true);
@@ -3655,6 +3671,7 @@ export default function App() {
   };
 
   async function autoScheduleWithAi() {
+    if (postType === "OFFER") return notify("Use Schedule post for offers so you can review the promotion and dates.");
     if (!selectedId) return notify("Select a profile first");
     const queuedImages =
       bulkImages.length > 0
@@ -3708,6 +3725,7 @@ export default function App() {
           offerTitle,
           offerCoupon,
           offerRedeemUrl,
+        offerStart, offerEnd, offerTerms,
           serviceTopicId: effectiveComposerTopicId,
           serviceType:
             composerTopic?.serviceType || composerTopic?.label || "",
@@ -3775,6 +3793,7 @@ export default function App() {
           offerTitle,
           offerCoupon,
           offerRedeemUrl,
+        offerStart, offerEnd, offerTerms,
           serviceTopicId: effectiveComposerTopicId,
           serviceType:
             composerTopic?.serviceType || composerTopic?.label || "",
@@ -3868,9 +3887,13 @@ export default function App() {
     setEventStart("");
     setEventEnd("");
     setOfferTitle("");
+    setOfferStart("");
+    setOfferEnd("");
+    setOfferTerms("");
     setOfferCoupon("");
     setOfferRedeemUrl("");
     setPostNowStatus("");
+    setEditingScheduledId("");
   }
 
   async function doPostNowAll() {
@@ -4892,6 +4915,18 @@ export default function App() {
                 onChangeEventStart={setEventStart}
                 eventEnd={eventEnd}
                 onChangeEventEnd={setEventEnd}
+                offerStart={offerStart}
+                onChangeOfferStart={setOfferStart}
+                offerEnd={offerEnd}
+                onChangeOfferEnd={setOfferEnd}
+                offerTerms={offerTerms}
+                onChangeOfferTerms={setOfferTerms}
+                offerStarters={OFFER_STARTERS}
+                onOfferStarter={(starter) => {
+                  setOfferTitle(starter.title);
+                  setPostText(`${starter.title}\n\n${starter.copy}\n\nContact us to discuss your project and confirm the offer details.`);
+                  notify("Offer starter loaded. Add your promotion details, dates and terms before publishing.");
+                }}
                 offerTitle={offerTitle}
                 onChangeOfferTitle={setOfferTitle}
                 offerCoupon={offerCoupon}
@@ -4917,9 +4952,11 @@ export default function App() {
                   </div>
                   <label className="field-label" htmlFor="composer-photo-url">Photo link</label>
                   <input id="composer-photo-url" value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="https://… or choose a photo above" />
+                  {postType === "OFFER" ? <p className="muted small">Google offers use a View offer button. Set the optional redemption link in Offer details.</p> : <>
                   <label className="field-label" htmlFor="composer-button">What should customers do?</label>
                   <select id="composer-button" value={cta} onChange={e => setCta(e.target.value)}>{CTA_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-                  {cta === "CALL_NOW" ? <p className="muted small">Calls use {phoneCandidate || "the phone number in your business settings below"}.</p> : <><label className="field-label" htmlFor="composer-link">Button destination</label><input id="composer-link" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://your-website.com/service/" /></>}
+                  {cta === "CALL_NOW" ? <p className="muted small">Calls use {phoneCandidate || "the phone number in your business settings below"}.</p> : <><label className="field-label" htmlFor="composer-link">Button destination</label><input id="composer-link" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} placeholder="https://your-website.com/service/" /></>}</>}
+
                 </section>
               <section className="panel">
                 <div className="panel-title">3. Review your post</div>
@@ -4932,10 +4969,11 @@ export default function App() {
                       badgeLabel={getPostTypeLabel(postType)}
                       warning={previewWarning}
                       bodyText={previewBodyText}
-                      ctaLabel={CTA_LABELS[cta] || "Customer button"}
+                      offerDetails={postType === "OFFER" ? { title: offerTitle, start: offerStart, end: offerEnd, coupon: offerCoupon, terms: offerTerms } : null}
+                      ctaLabel={postType === "OFFER" ? "View offer" : CTA_LABELS[cta] || "Customer button"}
                       ctaHref={previewCtaHref}
                       ctaDisabled={!previewCtaHref}
-                      metaRows={previewMetaRows}
+                      metaRows={postType === "OFFER" ? [{ label: "Redemption link", content: offerRedeemUrl || "No online link" }, { label: "Photo", content: previewPhotoContent }] : previewMetaRows}
                       mediaUrl={previewMediaPreviewUrl}
                       overlayUrl={previewOverlayPreviewUrl}
                       onMediaClick={handlePreviewMediaClick}
@@ -6994,9 +7032,21 @@ export default function App() {
                                   type="button"
                                   onClick={() => {
                                     setEditingScheduledId(it.id);
-                                    setScheduleDate(it.runAt.slice(0, 10));
-                                    setScheduleTime(it.runAt.slice(11, 16));
+                                    const localRun = new Date(it.runAt);
+                                    const pad = n => String(n).padStart(2, "0");
+                                    setScheduleDate(`${localRun.getFullYear()}-${pad(localRun.getMonth()+1)}-${pad(localRun.getDate())}`);
+                                    setScheduleTime(`${pad(localRun.getHours())}:${pad(localRun.getMinutes())}`);
                                     if (it.body) {
+                                      setPostType(it.body.topicType || "STANDARD");
+                                      setEventTitle(it.body.eventTitle || "");
+                                      setEventStart(it.body.eventStart || "");
+                                      setEventEnd(it.body.eventEnd || "");
+                                      setOfferTitle(it.body.offerTitle || "");
+                                      setOfferStart(it.body.offerStart || "");
+                                      setOfferEnd(it.body.offerEnd || "");
+                                      setOfferTerms(it.body.offerTerms || "");
+                                      setOfferCoupon(it.body.offerCoupon || "");
+                                      setOfferRedeemUrl(it.body.offerRedeemUrl || "");
                                       setPostText(it.body.postText || "");
                                       setCta(it.body.cta || "CALL_NOW");
                                       setLinkUrl(it.body.linkUrl || "");

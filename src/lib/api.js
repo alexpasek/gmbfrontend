@@ -115,6 +115,7 @@ const api = {
     offerTitle,
     offerCoupon,
     offerRedeemUrl,
+    offerStart, offerEnd, offerTerms,
     overlayUrl,
     phone,
     serviceTopicId,
@@ -139,6 +140,7 @@ const api = {
         offerTitle,
         offerCoupon,
         offerRedeemUrl,
+    offerStart, offerEnd, offerTerms,
       }),
     });
   },
